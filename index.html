@@ -12,8 +12,16 @@
 <div class="app">
 <aside class="side"><div class="brand"><div class="ico">▣</div><span>DIGITAL CARD</span></div><div class="nav" id="nav"></div><div class="user">👤 <b>Administrador</b></div></aside>
 <main class="main" id="main"></main>
-</div><div class="toast" id="toast"></div>
+</div><div class="toast" id="toast"></div><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
+const SUPABASE_URL = 'https://loovwrnifdimlwpfgjza.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_eP8FFThBgpS4ox4tlP40Lg_8Y51C9sR';
+
+const supabaseClient = window.supabase.createClient(
+  SUPABASE_URL,
+  SUPABASE_KEY
+);
+
 const state={page:'dashboard',step:1,card:{id:'CARD-000001',name:'Víctor Piña',role:'CEO & Fundador',company:'P&M Group',slogan:'Transformamos estrategia, tecnología y talento en resultados para tu empresa.',about:'Impulsamos empresas con Marketing Digital, IA, generación de leads, Contact Center y estrategias comerciales.',phone:'+52 667 000 0000',wa:'526670000000',email:'contacto@pmgroup.mx',web:'https://example.com',location:'Ciudad de México',instagram:'https://instagram.com/',linkedin:'https://linkedin.com/',facebook:'https://facebook.com/',tiktok:'https://tiktok.com/',youtube:'https://youtube.com/',x:'https://x.com/',capture:true,services:[['Contact Center & BPO','Ventas y conversión de leads, atención al cliente y gestión omnicanal.'],['Marketing Digital','Campañas y estrategias para generar leads y acelerar crecimiento.'],['Inteligencia Artificial','Automatización, contenido y optimización de procesos.']]},leads:[{id:'LEAD-000001',name:'Juan Pérez',phone:'+52 667 123 4567',email:'juan@email.com',card:'Víctor Piña',date:'13/08/2026 16:25',source:'QR',action:'WhatsApp'}]};
 const navItems=[['dashboard','⌂','Dashboard'],['cards','▣','Mis Digital Cards'],['leads','♙','Prospectos'],['stats','⌁','Estadísticas'],['templates','▧','Plantillas'],['qr','▦','QR Codes'],['clients','♧','Clientes / Empresas'],['plans','▤','Suscripciones'],['settings','⚙','Configuración'],['integrations','◈','Integraciones'],['help','?','Ayuda']];
 function esc(s){return String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
