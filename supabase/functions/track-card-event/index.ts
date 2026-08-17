@@ -6,6 +6,7 @@ const EXACT_ORIGINS = new Set([
   'http://127.0.0.1:4173',
   'http://localhost:4173',
   'https://digital-card-mvp-three.vercel.app',
+  'https://mxbusinesscard.com',
 ])
 const VERCEL_PREVIEW_HOST = /^digital-card(?:-[a-z0-9-]+)?-digital-01dd\.vercel\.app$/
 const ALLOWED_KEYS = new Set(['card_id', 'event_type', 'metadata'])

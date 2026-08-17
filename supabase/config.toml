@@ -1,0 +1,11 @@
+[functions.create-prospect]
+verify_jwt = false
+
+[functions.track-card-event]
+verify_jwt = false
+
+[functions.export-prospects-csv]
+verify_jwt = true
+
+[functions.organization-invitations]
+verify_jwt = true
