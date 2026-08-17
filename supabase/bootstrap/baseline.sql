@@ -2643,6 +2643,23 @@ begin
 end;
 $function$;
 
+CREATE OR REPLACE FUNCTION private.qr_capability_enabled(plan_capabilities jsonb, capability_name text)
+ RETURNS boolean
+ LANGUAGE sql
+ IMMUTABLE
+ SET search_path TO 'pg_catalog'
+AS $function$
+  select case
+    when jsonb_typeof(
+      coalesce(plan_capabilities, '{}'::jsonb) -> capability_name
+    ) = 'boolean'
+    then (
+      coalesce(plan_capabilities, '{}'::jsonb) ->> capability_name
+    )::boolean
+    else false
+  end;
+$function$;
+
 CREATE OR REPLACE FUNCTION private.get_effective_qr_plan(target_organization_id uuid)
  RETURNS TABLE(subscription_id uuid, subscription_status text, plan_id uuid, qr_enabled boolean, qr_custom_colors boolean, qr_logo_enabled boolean, qr_premium_styles boolean)
  LANGUAGE sql
@@ -2829,23 +2846,6 @@ begin
       'qr_premium_styles'
     );
 end;
-$function$;
-
-CREATE OR REPLACE FUNCTION private.qr_capability_enabled(plan_capabilities jsonb, capability_name text)
- RETURNS boolean
- LANGUAGE sql
- IMMUTABLE
- SET search_path TO 'pg_catalog'
-AS $function$
-  select case
-    when jsonb_typeof(
-      coalesce(plan_capabilities, '{}'::jsonb) -> capability_name
-    ) = 'boolean'
-    then (
-      coalesce(plan_capabilities, '{}'::jsonb) ->> capability_name
-    )::boolean
-    else false
-  end;
 $function$;
 
 CREATE OR REPLACE FUNCTION public.get_organization_qr_capabilities(target_organization_id uuid)
