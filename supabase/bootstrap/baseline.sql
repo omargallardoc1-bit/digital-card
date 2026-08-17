@@ -16,10 +16,9 @@ BEGIN
   IF to_regnamespace('auth') IS NULL
      OR to_regnamespace('storage') IS NULL
      OR to_regnamespace('extensions') IS NULL
-     OR to_regnamespace('supabase_migrations') IS NULL
   THEN
     RAISE EXCEPTION
-      'La baseline requiere un proyecto Supabase inicializado con auth, storage, extensions y supabase_migrations.';
+      'La baseline requiere un proyecto Supabase inicializado con auth, storage y extensions.';
   END IF;
 
   IF to_regrole('anon') IS NULL
@@ -92,24 +91,24 @@ BEGIN
       'Baseline rechazada: ya existe el bucket digital-card-media.';
   END IF;
 
-  IF to_regclass('supabase_migrations.schema_migrations') IS NOT NULL
-     AND EXISTS (
-       SELECT 1
-       FROM supabase_migrations.schema_migrations AS migration
-       WHERE migration.version IN (
-         '20260814050818','20260814163620','20260814164045',
-         '20260814180515','20260814184711','20260814190550',
-         '20260814194735','20260814200953','20260814201752',
-         '20260814205419','20260814212445','20260814222238',
-         '20260814231522','20260815015327','20260815020534',
-         '20260815205710','20260815210218','20260815210352',
-         '20260817141457','20260817142512','20260817143043',
-         '20260817143820','20260817144510','20260817145230'
-       )
-     )
-  THEN
-    RAISE EXCEPTION
-      'Baseline rechazada: existe historial de migraciones de Digital Card.';
+  IF to_regclass('supabase_migrations.schema_migrations') IS NOT NULL THEN
+    IF EXISTS (
+      SELECT 1
+      FROM supabase_migrations.schema_migrations AS migration
+      WHERE migration.version IN (
+        '20260814050818','20260814163620','20260814164045',
+        '20260814180515','20260814184711','20260814190550',
+        '20260814194735','20260814200953','20260814201752',
+        '20260814205419','20260814212445','20260814222238',
+        '20260814231522','20260815015327','20260815020534',
+        '20260815205710','20260815210218','20260815210352',
+        '20260817141457','20260817142512','20260817143043',
+        '20260817143820','20260817144510','20260817145230'
+      )
+    ) THEN
+      RAISE EXCEPTION
+        'Baseline rechazada: existe historial de migraciones de Digital Card.';
+    END IF;
   END IF;
 END;
 $baseline_preflight$;
