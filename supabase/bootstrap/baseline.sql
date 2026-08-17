@@ -4193,17 +4193,44 @@ alter table public.card_buttons enable row level security;
 alter table public.card_services enable row level security;
 alter table public.card_socials enable row level security;
 
-create policy "Owners manage card buttons"
+create policy "Authenticated reads permitted card buttons"
 on public.card_buttons
 as permissive
-for all
+for select
 to authenticated
 using ((EXISTS ( SELECT 1
    FROM digital_cards c
-  WHERE ((c.id = card_buttons.card_id) AND (c.owner_id = ( SELECT auth.uid() AS uid))))))
+  WHERE ((c.id = card_buttons.card_id) AND (private.is_organization_member(c.organization_id) OR ((c.organization_id IS NULL) AND (c.owner_id = ( SELECT auth.uid() AS uid))))))));
+
+create policy "Authorized members insert card buttons"
+on public.card_buttons
+as permissive
+for insert
+to authenticated
 with check ((EXISTS ( SELECT 1
    FROM digital_cards c
-  WHERE ((c.id = card_buttons.card_id) AND (c.owner_id = ( SELECT auth.uid() AS uid))))));
+  WHERE ((c.id = card_buttons.card_id) AND (private.has_organization_role(c.organization_id, ARRAY['owner'::text, 'admin'::text, 'editor'::text]) OR ((c.organization_id IS NULL) AND (c.owner_id = ( SELECT auth.uid() AS uid))))))));
+
+create policy "Authorized members update card buttons"
+on public.card_buttons
+as permissive
+for update
+to authenticated
+using ((EXISTS ( SELECT 1
+   FROM digital_cards c
+  WHERE ((c.id = card_buttons.card_id) AND (private.has_organization_role(c.organization_id, ARRAY['owner'::text, 'admin'::text, 'editor'::text]) OR ((c.organization_id IS NULL) AND (c.owner_id = ( SELECT auth.uid() AS uid))))))))
+with check ((EXISTS ( SELECT 1
+   FROM digital_cards c
+  WHERE ((c.id = card_buttons.card_id) AND (private.has_organization_role(c.organization_id, ARRAY['owner'::text, 'admin'::text, 'editor'::text]) OR ((c.organization_id IS NULL) AND (c.owner_id = ( SELECT auth.uid() AS uid))))))));
+
+create policy "Authorized members delete card buttons"
+on public.card_buttons
+as permissive
+for delete
+to authenticated
+using ((EXISTS ( SELECT 1
+   FROM digital_cards c
+  WHERE ((c.id = card_buttons.card_id) AND (private.has_organization_role(c.organization_id, ARRAY['owner'::text, 'admin'::text, 'editor'::text]) OR ((c.organization_id IS NULL) AND (c.owner_id = ( SELECT auth.uid() AS uid))))))));
 
 create policy "Public reads buttons of published cards"
 on public.card_buttons
@@ -4214,17 +4241,44 @@ using (((enabled = true) AND (EXISTS ( SELECT 1
    FROM digital_cards c
   WHERE ((c.id = card_buttons.card_id) AND (c.status = 'published'::text))))));
 
-create policy "Owners manage card services"
+create policy "Authenticated reads permitted card services"
 on public.card_services
 as permissive
-for all
+for select
 to authenticated
 using ((EXISTS ( SELECT 1
    FROM digital_cards c
-  WHERE ((c.id = card_services.card_id) AND (c.owner_id = ( SELECT auth.uid() AS uid))))))
+  WHERE ((c.id = card_services.card_id) AND (private.is_organization_member(c.organization_id) OR ((c.organization_id IS NULL) AND (c.owner_id = ( SELECT auth.uid() AS uid))))))));
+
+create policy "Authorized members insert card services"
+on public.card_services
+as permissive
+for insert
+to authenticated
 with check ((EXISTS ( SELECT 1
    FROM digital_cards c
-  WHERE ((c.id = card_services.card_id) AND (c.owner_id = ( SELECT auth.uid() AS uid))))));
+  WHERE ((c.id = card_services.card_id) AND (private.has_organization_role(c.organization_id, ARRAY['owner'::text, 'admin'::text, 'editor'::text]) OR ((c.organization_id IS NULL) AND (c.owner_id = ( SELECT auth.uid() AS uid))))))));
+
+create policy "Authorized members update card services"
+on public.card_services
+as permissive
+for update
+to authenticated
+using ((EXISTS ( SELECT 1
+   FROM digital_cards c
+  WHERE ((c.id = card_services.card_id) AND (private.has_organization_role(c.organization_id, ARRAY['owner'::text, 'admin'::text, 'editor'::text]) OR ((c.organization_id IS NULL) AND (c.owner_id = ( SELECT auth.uid() AS uid))))))))
+with check ((EXISTS ( SELECT 1
+   FROM digital_cards c
+  WHERE ((c.id = card_services.card_id) AND (private.has_organization_role(c.organization_id, ARRAY['owner'::text, 'admin'::text, 'editor'::text]) OR ((c.organization_id IS NULL) AND (c.owner_id = ( SELECT auth.uid() AS uid))))))));
+
+create policy "Authorized members delete card services"
+on public.card_services
+as permissive
+for delete
+to authenticated
+using ((EXISTS ( SELECT 1
+   FROM digital_cards c
+  WHERE ((c.id = card_services.card_id) AND (private.has_organization_role(c.organization_id, ARRAY['owner'::text, 'admin'::text, 'editor'::text]) OR ((c.organization_id IS NULL) AND (c.owner_id = ( SELECT auth.uid() AS uid))))))));
 
 create policy "Public reads services of published cards"
 on public.card_services
@@ -5129,6 +5183,16 @@ grant truncate, references, trigger, maintain
 on table public.card_buttons,
          public.card_services
 to anon, authenticated, service_role;
+
+grant select
+on table public.card_buttons,
+         public.card_services
+to anon, authenticated;
+
+grant insert, update, delete
+on table public.card_buttons,
+         public.card_services
+to authenticated;
 
 grant select, truncate, references, trigger, maintain
 on table public.card_socials
