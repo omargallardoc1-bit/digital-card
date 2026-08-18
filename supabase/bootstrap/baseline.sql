@@ -45,6 +45,7 @@ BEGIN
     'public.organization_members',
     'public.organization_subscriptions',
     'public.organization_subscription_card_limit_audit',
+    'private.platform_admins',
     'public.digital_cards',
     'public.card_events',
     'public.prospects',
@@ -69,6 +70,7 @@ BEGIN
     'public.set_card_status(uuid,text)',
     'public.get_organization_card_capacity(uuid)',
     'public.set_subscription_contracted_cards(uuid,integer,text)',
+    'public.bootstrap_platform_superadmin(uuid,text)',
     'public.list_organization_members(uuid)',
     'public.set_card_media_reference(uuid,text,text)',
     'public.set_card_qr_settings(uuid,text,text,boolean,numeric,text)',
@@ -134,12 +136,131 @@ create schema if not exists private authorization postgres;
 revoke all on schema private from public, anon, authenticated, service_role;
 grant usage on schema private to authenticated;
 
+create table private.platform_admins (
+  user_id uuid not null,
+  role text not null,
+  status text default 'active'::text not null,
+  display_name text,
+  created_at timestamp with time zone default statement_timestamp() not null,
+  updated_at timestamp with time zone default statement_timestamp() not null,
+  created_by uuid,
+  disabled_at timestamp with time zone,
+  disabled_by uuid,
+  constraint platform_admins_pkey primary key (user_id),
+  constraint platform_admins_user_id_fkey
+    foreign key (user_id) references auth.users(id) on delete cascade,
+  constraint platform_admins_created_by_fkey
+    foreign key (created_by) references auth.users(id) on delete set null,
+  constraint platform_admins_disabled_by_fkey
+    foreign key (disabled_by) references auth.users(id) on delete set null,
+  constraint platform_admins_role_check
+    check (role in ('superadmin', 'commercial', 'support')),
+  constraint platform_admins_status_check
+    check (status in ('active', 'disabled')),
+  constraint platform_admins_display_name_check
+    check (display_name is null or nullif(btrim(display_name), '') is not null),
+  constraint platform_admins_disabled_state_check
+    check (
+      (status = 'active' and disabled_at is null and disabled_by is null)
+      or (status = 'disabled' and disabled_at is not null)
+    ),
+  constraint platform_admins_timestamps_check
+    check (updated_at >= created_at)
+);
+
+comment on table private.platform_admins is
+  'Identidades administrativas internas de MX Business Card, independientes de las membresías de organizaciones cliente.';
+
+comment on column private.platform_admins.created_by is
+  'Actor interno que creó el registro. NULL durante el bootstrap inicial ejecutado por service_role.';
+
 CREATE OR REPLACE FUNCTION private.set_updated_at()
  RETURNS trigger
  LANGUAGE plpgsql
  SET search_path TO 'pg_catalog'
 AS $function$
 begin new.updated_at:=statement_timestamp(); return new; end;
+$function$;
+
+CREATE OR REPLACE FUNCTION private.platform_admin_role(target_user_id uuid)
+ RETURNS text
+ LANGUAGE sql
+ STABLE
+ SECURITY DEFINER
+ SET search_path TO 'pg_catalog'
+AS $function$
+  select platform_admin.role
+  from private.platform_admins as platform_admin
+  where platform_admin.user_id = target_user_id
+    and platform_admin.status = 'active'
+  limit 1
+$function$;
+
+CREATE OR REPLACE FUNCTION public.bootstrap_platform_superadmin(
+  target_user_id uuid,
+  target_display_name text default null
+)
+ RETURNS table(
+   user_id uuid,
+   role text,
+   status text,
+   display_name text,
+   created_at timestamp with time zone
+ )
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'pg_catalog'
+AS $function$
+declare
+  normalized_display_name text := nullif(btrim(coalesce(target_display_name, '')), '');
+begin
+  if target_user_id is null then
+    raise exception using
+      errcode = '22023',
+      message = 'El usuario Auth es obligatorio.';
+  end if;
+
+  if not exists (
+    select 1
+    from auth.users as auth_user
+    where auth_user.id = target_user_id
+  ) then
+    raise exception using
+      errcode = 'P0002',
+      message = 'El usuario Auth no existe.';
+  end if;
+
+  if exists (
+    select 1
+    from private.platform_admins
+  ) then
+    raise exception using
+      errcode = '55000',
+      message = 'El bootstrap inicial de administración ya fue completado.';
+  end if;
+
+  return query
+  insert into private.platform_admins as platform_admin (
+    user_id,
+    role,
+    status,
+    display_name,
+    created_by
+  )
+  values (
+    target_user_id,
+    'superadmin',
+    'active',
+    normalized_display_name,
+    null
+  )
+  returning
+    platform_admin.user_id,
+    platform_admin.role,
+    platform_admin.status,
+    platform_admin.display_name,
+    platform_admin.created_at;
+end;
 $function$;
 
 CREATE OR REPLACE FUNCTION private.prevent_subscription_card_limit_audit_mutation()
@@ -1340,6 +1461,8 @@ CREATE TRIGGER plans_set_updated_at BEFORE UPDATE ON plans FOR EACH ROW EXECUTE 
 
 CREATE TRIGGER organizations_set_updated_at BEFORE UPDATE ON organizations FOR EACH ROW EXECUTE FUNCTION private.set_updated_at();
 
+CREATE TRIGGER platform_admins_set_updated_at BEFORE UPDATE ON private.platform_admins FOR EACH ROW EXECUTE FUNCTION private.set_updated_at();
+
 CREATE CONSTRAINT TRIGGER organization_members_require_active_owner AFTER DELETE OR UPDATE OF role, status ON organization_members DEFERRABLE INITIALLY IMMEDIATE FOR EACH ROW EXECUTE FUNCTION private.ensure_organization_has_active_owner();
 
 CREATE TRIGGER organization_members_set_updated_at BEFORE UPDATE ON organization_members FOR EACH ROW EXECUTE FUNCTION private.set_updated_at();
@@ -1359,6 +1482,7 @@ alter table public."organizations" enable row level security;
 alter table public."organization_members" enable row level security;
 alter table public."organization_subscriptions" enable row level security;
 alter table public."organization_subscription_card_limit_audit" enable row level security;
+alter table private.platform_admins enable row level security;
 alter table public."digital_cards" enable row level security;
 
 create policy "Authenticated users read active plans"
@@ -5511,11 +5635,16 @@ revoke all privileges
 on table public.organization_subscription_card_limit_audit
 from public, anon, authenticated, service_role;
 
+revoke all privileges
+on table private.platform_admins
+from public, anon, authenticated, service_role;
+
 revoke select, insert, update, delete
 on table public.organization_invitations
 from service_role;
 
 revoke all on function private.set_updated_at() from public, anon, authenticated, service_role;
+revoke all on function private.platform_admin_role(uuid) from public, anon, authenticated, service_role;
 revoke all on function private.qr_relative_luminance(text) from public, anon, authenticated, service_role;
 revoke all on function private.qr_contrast_ratio(text, text) from public, anon, authenticated, service_role;
 revoke all on function private.is_organization_member(uuid) from public, anon, authenticated, service_role;
@@ -5551,6 +5680,7 @@ revoke all on function public.update_organization_member(uuid, uuid, text, text)
 revoke all on function public.remove_organization_member(uuid, uuid) from public, anon, authenticated, service_role;
 revoke all on function public.get_organization_card_capacity(uuid) from public, anon, authenticated, service_role;
 revoke all on function public.set_subscription_contracted_cards(uuid, integer, text) from public, anon, authenticated, service_role;
+revoke all on function public.bootstrap_platform_superadmin(uuid, text) from public, anon, authenticated, service_role;
 revoke all on function public.get_organization_qr_capabilities(uuid) from public, anon, authenticated, service_role;
 revoke all on function public.set_card_media_reference(uuid, text, text) from public, anon, authenticated, service_role;
 revoke all on function public.set_card_qr_settings(uuid, text, text, boolean, numeric, text) from public, anon, authenticated, service_role;
@@ -5591,6 +5721,7 @@ grant execute on function public.create_organization_invitation(uuid, text, text
 grant execute on function public.resend_organization_invitation(uuid, bytea, timestamp with time zone, uuid) to service_role;
 grant execute on function public.revoke_organization_invitation(uuid, uuid) to service_role;
 grant execute on function public.set_subscription_contracted_cards(uuid, integer, text) to service_role;
+grant execute on function public.bootstrap_platform_superadmin(uuid, text) to service_role;
 
 -- Postflight estructural y de seguridad.
 DO $baseline_postflight$
@@ -5602,7 +5733,7 @@ BEGIN
   FROM unnest(ARRAY[
     'public.plans','public.organizations','public.organization_members',
     'public.organization_subscriptions','public.digital_cards',
-    'public.organization_subscription_card_limit_audit',
+    'public.organization_subscription_card_limit_audit','private.platform_admins',
     'public.card_events','public.prospects','public.card_buttons',
     'public.card_services','public.card_socials','public.organization_invitations'
   ]::text[]) AS candidate(object_name)
@@ -5622,12 +5753,14 @@ BEGIN
     'private.lock_lead_capture_plan(uuid)',
     'private.invitation_actor_role(uuid,uuid)',
     'private.organization_role(uuid)',
+    'private.platform_admin_role(uuid)',
     'public.create_organization_card(uuid,text,text,text,text,text,text,text,text,text,text,text,boolean,text)',
     'public.update_organization_card(uuid,text,text,text,text,text,text,text,text,text,text,boolean,text)',
     'public.set_card_status(uuid,text)',
     'public.list_organization_members(uuid)',
     'public.get_organization_card_capacity(uuid)',
     'public.set_subscription_contracted_cards(uuid,integer,text)',
+    'public.bootstrap_platform_superadmin(uuid,text)',
     'public.set_card_media_reference(uuid,text,text)',
     'public.get_organization_qr_capabilities(uuid)',
     'public.set_card_qr_settings(uuid,text,text,boolean,numeric,text)',
@@ -5645,6 +5778,54 @@ BEGIN
 
   IF missing_object IS NOT NULL THEN
     RAISE EXCEPTION 'Postflight: falta la función %.', missing_object;
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM private.platform_admins) THEN
+    RAISE EXCEPTION 'Postflight: la baseline no debe crear administradores de plataforma.';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_class AS relation
+    JOIN pg_catalog.pg_namespace AS namespace
+      ON namespace.oid = relation.relnamespace
+    WHERE namespace.nspname = 'private'
+      AND relation.relname = 'platform_admins'
+      AND relation.relkind = 'r'
+      AND relation.relrowsecurity
+  ) OR EXISTS (
+    SELECT 1
+    FROM pg_catalog.pg_policies AS policy
+    WHERE policy.schemaname = 'private'
+      AND policy.tablename = 'platform_admins'
+  ) THEN
+    RAISE EXCEPTION 'Postflight: RLS/Policies de private.platform_admins no coinciden.';
+  END IF;
+
+  IF has_table_privilege('anon', 'private.platform_admins', 'SELECT')
+     OR has_table_privilege('authenticated', 'private.platform_admins', 'SELECT')
+     OR has_table_privilege('service_role', 'private.platform_admins', 'SELECT')
+     OR has_table_privilege('anon', 'private.platform_admins', 'INSERT')
+     OR has_table_privilege('authenticated', 'private.platform_admins', 'INSERT')
+     OR has_table_privilege('service_role', 'private.platform_admins', 'INSERT')
+     OR has_table_privilege('anon', 'private.platform_admins', 'UPDATE')
+     OR has_table_privilege('authenticated', 'private.platform_admins', 'UPDATE')
+     OR has_table_privilege('service_role', 'private.platform_admins', 'UPDATE')
+     OR has_table_privilege('anon', 'private.platform_admins', 'DELETE')
+     OR has_table_privilege('authenticated', 'private.platform_admins', 'DELETE')
+     OR has_table_privilege('service_role', 'private.platform_admins', 'DELETE')
+  THEN
+    RAISE EXCEPTION 'Postflight: existen grants directos sobre private.platform_admins.';
+  END IF;
+
+  IF has_function_privilege('anon', 'private.platform_admin_role(uuid)', 'EXECUTE')
+     OR has_function_privilege('authenticated', 'private.platform_admin_role(uuid)', 'EXECUTE')
+     OR has_function_privilege('service_role', 'private.platform_admin_role(uuid)', 'EXECUTE')
+     OR has_function_privilege('anon', 'public.bootstrap_platform_superadmin(uuid,text)', 'EXECUTE')
+     OR has_function_privilege('authenticated', 'public.bootstrap_platform_superadmin(uuid,text)', 'EXECUTE')
+     OR NOT has_function_privilege('service_role', 'public.bootstrap_platform_superadmin(uuid,text)', 'EXECUTE')
+  THEN
+    RAISE EXCEPTION 'Postflight: los grants de identidad administrativa no coinciden.';
   END IF;
 
   IF NOT EXISTS (
