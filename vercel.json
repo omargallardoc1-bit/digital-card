@@ -9,6 +9,14 @@
       "destination": "/platform-admin.html"
     },
     {
+      "source": "/admin",
+      "destination": "/admin-shell.html"
+    },
+    {
+      "source": "/admin/",
+      "destination": "/admin-shell.html"
+    },
+    {
       "source": "/((?!.*\\.).*)",
       "destination": "/index.html"
     }
