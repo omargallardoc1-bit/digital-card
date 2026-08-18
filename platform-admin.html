@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>MX Business Card · Administración de plataforma</title>
+  <style>
+    :root{--nav:#0b1220;--primary:#4f46e5;--primary2:#4338ca;--bg:#f6f7fb;--card:#fff;--line:#e2e7f0;--text:#101828;--muted:#667085;--success:#15803d;--warning:#a16207;--danger:#b42318;--radius:14px}
+    *{box-sizing:border-box}body{margin:0;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--bg);color:var(--text)}
+    button,input,textarea{font:inherit}button{cursor:pointer}.hidden{display:none!important}
+    .shell{min-height:100vh;display:grid;grid-template-columns:250px minmax(0,1fr)}
+    aside{background:var(--nav);color:#fff;padding:24px 16px;display:flex;flex-direction:column;gap:24px}
+    .brand{display:flex;gap:12px;align-items:center}.mark{width:40px;height:40px;border-radius:12px;background:var(--primary);display:grid;place-items:center;font-weight:900}.brand strong,.brand small{display:block}.brand small{color:#98a2b3;margin-top:3px;font-size:11px;text-transform:uppercase;letter-spacing:.06em}
+    .nav-label{color:#667085;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;margin:4px 10px}.navbtn{width:100%;border:1px solid #344054;background:#172033;color:#fff;border-radius:10px;padding:11px 12px;text-align:left;font-weight:700}.account{margin-top:auto;padding:12px;border:1px solid #344054;border-radius:12px;background:#111b2e;font-size:12px;overflow-wrap:anywhere}.account b{display:block;margin-bottom:3px}.account small{color:#98a2b3}
+    .workspace{min-width:0}.header{height:74px;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 28px;background:#fff;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}.header h1{font-size:18px;margin:0}.header p{margin:2px 0 0;color:var(--muted);font-size:12px}.header-actions{display:flex;gap:8px}
+    main{max-width:1440px;margin:auto;padding:28px}.hero{display:flex;justify-content:space-between;gap:18px;align-items:flex-start;margin-bottom:20px}.hero h2{font-size:28px;margin:0 0 5px}.hero p{margin:0;color:var(--muted)}
+    .panel{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:20px;box-shadow:0 1px 3px rgba(16,24,40,.06)}.toolbar{display:grid;grid-template-columns:minmax(180px,1fr) auto;gap:10px;margin-bottom:16px}
+    input,textarea{width:100%;border:1px solid #d0d5dd;border-radius:10px;padding:10px 12px;background:#fff;color:var(--text)}textarea{min-height:90px;resize:vertical}
+    button{min-height:42px;border-radius:10px;padding:9px 14px;font-weight:700;border:1px solid transparent}.primary{background:var(--primary);border-color:var(--primary);color:#fff}.primary:hover{background:var(--primary2)}.ghost{background:#fff;border-color:#d0d5dd;color:var(--text)}button:disabled{opacity:.55;cursor:not-allowed}
+    .table-wrap{overflow:auto}.table{width:100%;border-collapse:collapse;min-width:900px}.table th,.table td{padding:12px 10px;border-bottom:1px solid var(--line);text-align:left;font-size:13px}.table th{color:#475467;background:#f8fafc;font-size:11px;text-transform:uppercase;letter-spacing:.04em}.table tbody tr{cursor:pointer}.table tbody tr:hover{background:#f8fafc}
+    .badge{display:inline-block;border-radius:999px;padding:4px 9px;font-size:11px;font-weight:800;background:#eef2ff;color:var(--primary)}.good{background:#ecfdf3;color:var(--success)}.warn{background:#fffaeb;color:var(--warning)}.bad{background:#fef3f2;color:var(--danger)}
+    .empty{padding:38px 16px;text-align:center;color:var(--muted)}.error{border:1px solid #fecdca;background:#fef3f2;color:var(--danger);border-radius:10px;padding:12px;margin-bottom:16px}.success{border:1px solid #abefc6;background:#ecfdf3;color:#067647;border-radius:10px;padding:12px;margin-bottom:16px}
+    .grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:14px 0}.stat{border:1px solid var(--line);border-radius:12px;padding:14px}.stat span{display:block;color:var(--muted);font-size:12px}.stat strong{display:block;font-size:22px;margin-top:5px}
+    .detail-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}.detail-head h3{margin:0;font-size:20px}.detail-head p{margin:3px 0 0;color:var(--muted)}
+    .edit-grid{display:grid;grid-template-columns:220px minmax(260px,1fr) auto;gap:12px;align-items:end;margin-top:18px;padding-top:18px;border-top:1px solid var(--line)}label{display:block;font-size:12px;font-weight:800;margin-bottom:6px}.history{margin-top:18px}.history h4{margin:0 0 10px}
+    .login{min-height:100vh;display:grid;place-items:center;padding:18px}.login-card{width:min(430px,100%);background:#fff;border:1px solid var(--line);border-radius:18px;padding:28px;box-shadow:0 14px 34px rgba(16,24,40,.12)}.login-card h1{margin:12px 0 5px}.login-card p{color:var(--muted);margin:0 0 20px}.field{margin-bottom:14px}.login-card .primary{width:100%}
+    .pager{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-top:14px;color:var(--muted);font-size:13px}.pager div{display:flex;gap:8px}
+    @media(max-width:900px){.shell{grid-template-columns:1fr}aside{display:none}.header{padding:10px 16px}main{padding:18px}.grid{grid-template-columns:repeat(2,1fr)}.edit-grid{grid-template-columns:1fr}.hero{display:block}.hero .ghost{margin-top:12px}}
+    @media(max-width:520px){.header h1{font-size:15px}.header p{display:none}.grid{grid-template-columns:1fr}.toolbar{grid-template-columns:1fr}.header-actions button:first-child{display:none}}
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.57.4/dist/umd/supabase.min.js"></script>
+  <script>
+    const SUPABASE_URL='https://loovwrnifdimlwpfgjza.supabase.co';
+    const SUPABASE_PUBLISHABLE_KEY='sb_publishable_eP8FFThBgpS4ox4tlP40Lg_8Y51C9sR';
+    const db=supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY);
+    const state={session:null,customers:[],total:0,page:1,pageSize:25,search:'',loading:false,error:'',detail:null,history:[],detailLoading:false,mutation:false};
+    const root=document.getElementById('root');
+    const esc=v=>String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+    const n=v=>v===null||v===undefined?'—':String(v);
+    function statusBadge(status){const s=String(status||'sin_suscripcion'),cls=['active','trial'].includes(s)?'good':s==='past_due'?'warn':['cancelled','expired'].includes(s)?'bad':'';return `<span class="badge ${cls}">${esc(s)}</span>`}
+    function renderLogin(message=''){
+      root.innerHTML=`<div class="login"><form class="login-card" onsubmit="login(event)"><div class="mark">MX</div><h1>Administración de plataforma</h1><p>Acceso reservado para superadministradores.</p>${message?`<div class="error">${esc(message)}</div>`:''}<div class="field"><label for="email">Correo</label><input id="email" type="email" autocomplete="email" required></div><div class="field"><label for="password">Contraseña</label><input id="password" type="password" autocomplete="current-password" required></div><button class="primary" type="submit">Ingresar</button></form></div>`;
+    }
+    async function login(e){e.preventDefault();const btn=e.currentTarget.querySelector('button');btn.disabled=true;const email=document.getElementById('email').value.trim(),password=document.getElementById('password').value;const {data,error}=await db.auth.signInWithPassword({email,password});btn.disabled=false;if(error){renderLogin('Correo o contraseña incorrectos.');return}state.session=data.session;await loadCustomers();}
+    async function logout(){await db.auth.signOut();state.session=null;renderLogin();}
+    async function invoke(body){
+      const {data,error}=await db.functions.invoke('platform-admin',{body});
+      if(!error)return data;
+      let message='No fue posible completar la operación.';
+      let code='';
+      try{const context=error.context;if(context&&typeof context.clone==='function'){const payload=await context.clone().json();code=payload?.error?.code||'';message=payload?.error?.message||message}else if(context&&typeof context.json==='function'){const payload=await context.json();code=payload?.error?.code||'';message=payload?.error?.message||message}}catch{}
+      const err=new Error(message);err.code=code;throw err;
+    }
+    function shell(){
+      const email=state.session?.user?.email||'Sesión activa';
+      return `<div class="shell"><aside><div class="brand"><div class="mark">MX</div><div><strong>MX Business Card</strong><small>Superadministración</small></div></div><div><div class="nav-label">Plataforma</div><button class="navbtn" onclick="closeDetail()">Clientes y organizaciones</button></div><div class="account"><b>${esc(email)}</b><small>Superadmin</small></div></aside><div class="workspace"><header class="header"><div><h1>Administración de plataforma</h1><p>Control global de clientes y capacidad contratada</p></div><div class="header-actions"><button class="ghost" onclick="location.href='/admin'">Panel de organización</button><button class="ghost" onclick="logout()">Cerrar sesión</button></div></header><main id="main"></main></div></div>`;
+    }
+    function render(){
+      if(!state.session){renderLogin();return}
+      root.innerHTML=shell();
+      const main=document.getElementById('main');
+      main.innerHTML=state.detail?detailView():listView();
+    }
+    function listView(){
+      const pages=Math.max(1,Math.ceil(state.total/state.pageSize));
+      const rows=state.customers.map(c=>`<tr onclick="openCustomer('${esc(c.organization_id)}')"><td><b>${esc(c.organization_name)}</b></td><td>${esc(c.plan_name||'—')}</td><td>${statusBadge(c.subscription_status)}</td><td>${esc(n(c.contracted_cards))}</td><td>${esc(n(c.used_cards))}</td><td>${esc(n(c.available_cards))}</td><td>${c.is_over_limit?`<span class="badge bad">Exceso ${esc(n(c.over_limit_by))}</span>`:'<span class="badge good">Dentro del límite</span>'}</td></tr>`).join('');
+      return `<div class="hero"><div><h2>Clientes</h2><p>Organizaciones, suscripciones y uso global de Digital Cards.</p></div><button class="ghost" onclick="loadCustomers()">Recargar</button></div>${state.error?`<div class="error">${esc(state.error)}</div>`:''}<section class="panel"><form class="toolbar" onsubmit="searchCustomers(event)"><input id="search" value="${esc(state.search)}" maxlength="160" placeholder="Buscar por organización"><button class="primary" type="submit" ${state.loading?'disabled':''}>Buscar</button></form>${state.loading?'<div class="empty">Cargando clientes…</div>':rows?`<div class="table-wrap"><table class="table"><thead><tr><th>Organización</th><th>Plan</th><th>Suscripción</th><th>Contratadas</th><th>En uso</th><th>Disponibles</th><th>Estado</th></tr></thead><tbody>${rows}</tbody></table></div>`:'<div class="empty">No hay organizaciones para mostrar.</div>'}<div class="pager"><span>Página ${state.page} de ${pages} · ${state.total} cliente(s)</span><div><button class="ghost" onclick="changePage(-1)" ${state.page<=1||state.loading?'disabled':''}>Anterior</button><button class="ghost" onclick="changePage(1)" ${state.page>=pages||state.loading?'disabled':''}>Siguiente</button></div></div></section>`;
+    }
+    function detailView(){
+      const c=state.detail;
+      if(state.detailLoading||!c)return '<div class="panel empty">Cargando detalle…</div>';
+      const noSub=!c.subscription_id;
+      const historyRows=state.history.map(h=>`<tr><td>${esc(formatDate(h.changed_at))}</td><td>${esc(n(h.old_contracted_cards))}</td><td>${esc(n(h.new_contracted_cards))}</td><td>${esc(h.change_reason||'—')}</td><td>${esc(h.changed_by_display_name||'—')}</td></tr>`).join('');
+      return `<div class="hero"><div><h2>${esc(c.organization_name)}</h2><p>Detalle comercial y capacidad contratada.</p></div><button class="ghost" onclick="closeDetail()">← Volver a clientes</button></div>${state.error?`<div class="error">${esc(state.error)}</div>`:''}<section class="panel"><div class="detail-head"><div><h3>${esc(c.plan_name||'Sin plan vigente')}</h3><p>${statusBadge(c.subscription_status)}</p></div><button class="ghost" onclick="refreshDetail()">Recargar</button></div><div class="grid"><div class="stat"><span>Tarjetas contratadas</span><strong>${esc(n(c.contracted_cards))}</strong></div><div class="stat"><span>En uso</span><strong>${esc(n(c.used_cards))}</strong></div><div class="stat"><span>Disponibles</span><strong>${esc(n(c.available_cards))}</strong></div><div class="stat"><span>Exceso</span><strong>${esc(n(c.over_limit_by))}</strong></div></div>${noSub?'<div class="error">Esta organización no tiene una suscripción efectiva que pueda administrarse.</div>':`<form class="edit-grid" onsubmit="setLimit(event)"><div><label for="new-limit">Nueva cantidad contratada</label><input id="new-limit" type="number" min="0" max="2147483647" step="1" value="${esc(c.contracted_cards)}" required></div><div><label for="reason">Motivo del cambio</label><textarea id="reason" maxlength="500" placeholder="Ej. Ampliación comercial acordada con el cliente" required></textarea></div><button class="primary" type="submit" ${state.mutation?'disabled':''}>${state.mutation?'Guardando…':'Guardar límite'}</button></form>`}<div class="history"><h4>Historial de cambios</h4>${noSub?'<div class="empty">No hay suscripción para consultar historial.</div>':historyRows?`<div class="table-wrap"><table class="table"><thead><tr><th>Fecha</th><th>Anterior</th><th>Nuevo</th><th>Motivo</th><th>Administrador</th></tr></thead><tbody>${historyRows}</tbody></table></div>`:'<div class="empty">Aún no hay cambios registrados.</div>'}</div></section>`;
+    }
+    async function loadCustomers(){
+      if(!state.session)return;state.loading=true;state.error='';render();
+      try{const payload=await invoke({action:'list_customers',search_text:state.search||null,page:state.page,page_size:state.pageSize});const rows=Array.isArray(payload?.data)?payload.data:[];state.customers=rows;state.total=Number(rows[0]?.total_count||0)}
+      catch(e){state.customers=[];state.total=0;state.error=e.code==='forbidden'?'No tienes autorización de superadministración.':e.message}
+      finally{state.loading=false;render()}
+    }
+    function searchCustomers(e){e.preventDefault();state.search=document.getElementById('search').value.trim();state.page=1;loadCustomers()}
+    function changePage(delta){state.page=Math.max(1,state.page+delta);loadCustomers()}
+    async function openCustomer(id){state.detailLoading=true;state.detail={organization_id:id};state.error='';render();await refreshDetail()}
+    async function refreshDetail(){
+      const id=state.detail?.organization_id;if(!id)return;state.detailLoading=true;state.error='';render();
+      try{const payload=await invoke({action:'get_customer',organization_id:id});const rows=Array.isArray(payload?.data)?payload.data:[];state.detail=rows[0]||null;if(state.detail?.subscription_id){const historyPayload=await invoke({action:'list_card_limit_history',subscription_id:state.detail.subscription_id,page:1,page_size:100});state.history=Array.isArray(historyPayload?.data)?historyPayload.data:[]}else state.history=[]}
+      catch(e){state.error=e.message}
+      finally{state.detailLoading=false;render()}
+    }
+    function closeDetail(){state.detail=null;state.history=[];state.error='';render()}
+    async function setLimit(e){
+      e.preventDefault();if(!state.detail?.subscription_id||state.mutation)return;
+      const newLimit=Number(document.getElementById('new-limit').value),reason=document.getElementById('reason').value.trim();
+      if(!Number.isSafeInteger(newLimit)||newLimit<0){state.error='La cantidad debe ser un número entero mayor o igual a cero.';render();return}
+      if(!reason){state.error='El motivo del cambio es obligatorio.';render();return}
+      if(!confirm(`¿Cambiar la cantidad contratada de ${state.detail.contracted_cards} a ${newLimit}?`))return;
+      state.mutation=true;state.error='';render();
+      try{await invoke({action:'set_contracted_cards',subscription_id:state.detail.subscription_id,expected_contracted_cards:Number(state.detail.contracted_cards),new_contracted_cards:newLimit,change_reason:reason});await refreshDetail();await loadCustomers()}
+      catch(err){state.error=err.message}
+      finally{state.mutation=false;render()}
+    }
+    function formatDate(v){const d=new Date(v);return Number.isNaN(d.getTime())?'—':d.toLocaleString('es-MX')}
+    db.auth.onAuthStateChange((event,session)=>{state.session=session;if(!session){renderLogin();return}if(event==='SIGNED_IN')loadCustomers()});
+    (async()=>{const {data:{session}}=await db.auth.getSession();state.session=session;if(session)await loadCustomers();else renderLogin()})();
+  </script>
+</body>
+</html>
