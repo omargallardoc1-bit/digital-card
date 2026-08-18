@@ -44,6 +44,7 @@ BEGIN
     'public.organizations',
     'public.organization_members',
     'public.organization_subscriptions',
+    'public.organization_subscription_card_limit_audit',
     'public.digital_cards',
     'public.card_events',
     'public.prospects',
@@ -66,6 +67,8 @@ BEGIN
     'public.create_organization_card(uuid,text,text,text,text,text,text,text,text,text,text,text,boolean,text)',
     'public.update_organization_card(uuid,text,text,text,text,text,text,text,text,text,text,boolean,text)',
     'public.set_card_status(uuid,text)',
+    'public.get_organization_card_capacity(uuid)',
+    'public.set_subscription_contracted_cards(uuid,integer,text)',
     'public.list_organization_members(uuid)',
     'public.set_card_media_reference(uuid,text,text)',
     'public.set_card_qr_settings(uuid,text,text,boolean,numeric,text)',
@@ -137,6 +140,18 @@ CREATE OR REPLACE FUNCTION private.set_updated_at()
  SET search_path TO 'pg_catalog'
 AS $function$
 begin new.updated_at:=statement_timestamp(); return new; end;
+$function$;
+
+CREATE OR REPLACE FUNCTION private.prevent_subscription_card_limit_audit_mutation()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SET search_path TO 'pg_catalog'
+AS $function$
+begin
+  raise exception using
+    errcode = '55000',
+    message = 'La auditoría de tarjetas contratadas es append-only.';
+end;
 $function$;
 
 CREATE OR REPLACE FUNCTION private.qr_relative_luminance(hex_color text)
@@ -304,6 +319,7 @@ create table public."organization_subscriptions" (
   "id" uuid default gen_random_uuid() not null,
   "organization_id" uuid not null,
   "plan_id" uuid not null,
+  "contracted_cards" integer not null,
   "status" text not null,
   "starts_at" timestamp with time zone not null,
   "expires_at" timestamp with time zone,
@@ -318,6 +334,7 @@ create table public."organization_subscriptions" (
   "updated_at" timestamp with time zone default now() not null,
   constraint "organization_subscriptions_amount_check" CHECK (amount IS NULL OR amount >= 0::numeric),
   constraint "organization_subscriptions_amount_currency_check" CHECK (amount IS NULL AND currency IS NULL OR amount IS NOT NULL AND currency IS NOT NULL),
+  constraint "organization_subscriptions_contracted_cards_check" CHECK (contracted_cards >= 0),
   constraint "organization_subscriptions_created_by_fkey" FOREIGN KEY (created_by) REFERENCES auth.users(id) ON DELETE SET NULL,
   constraint "organization_subscriptions_currency_check" CHECK (currency IS NULL OR currency ~ '^[A-Z]{3}$'::text),
   constraint "organization_subscriptions_dates_check" CHECK (expires_at IS NULL OR expires_at > starts_at),
@@ -331,6 +348,42 @@ create table public."organization_subscriptions" (
   constraint "organization_subscriptions_status_check" CHECK (status = ANY (ARRAY['trial'::text, 'active'::text, 'past_due'::text, 'cancelled'::text, 'expired'::text])),
   constraint "organization_subscriptions_timestamps_check" CHECK (updated_at >= created_at)
 );
+
+comment on column public.organization_subscriptions.contracted_cards is
+  'Cantidad de tarjetas contratada para esta suscripción. Debe proporcionarse explícitamente al crear una suscripción.';
+
+create table public.organization_subscription_card_limit_audit (
+  id uuid default gen_random_uuid() not null,
+  organization_id uuid not null,
+  subscription_id uuid not null,
+  old_contracted_cards integer not null,
+  new_contracted_cards integer not null,
+  change_reason text not null,
+  changed_at timestamp with time zone default statement_timestamp() not null,
+  changed_by uuid,
+  constraint organization_subscription_card_limit_audit_pkey primary key (id),
+  constraint organization_subscription_card_limit_audit_organization_id_fkey
+    foreign key (organization_id) references public.organizations(id) on delete restrict,
+  constraint organization_subscription_card_limit_audit_subscription_id_fkey
+    foreign key (subscription_id) references public.organization_subscriptions(id) on delete restrict,
+  constraint organization_subscription_card_limit_audit_changed_by_fkey
+    foreign key (changed_by) references auth.users(id) on delete set null,
+  constraint organization_subscription_card_limit_audit_old_value_check
+    check (old_contracted_cards >= 0),
+  constraint organization_subscription_card_limit_audit_new_value_check
+    check (new_contracted_cards >= 0),
+  constraint organization_subscription_card_limit_audit_reason_check
+    check (
+      nullif(btrim(change_reason), '') is not null
+      and char_length(change_reason) <= 500
+    )
+);
+
+comment on table public.organization_subscription_card_limit_audit is
+  'Auditoría append-only de cambios en la cantidad de tarjetas contratadas.';
+
+comment on column public.organization_subscription_card_limit_audit.changed_by is
+  'NULL hasta que una futura Edge Function administrativa pueda registrar un actor autenticado confiable.';
 
 create table public."digital_cards" (
   "id" uuid default gen_random_uuid() not null,
@@ -407,7 +460,7 @@ AS $function$
     plan.id,
     plan.code,
     plan.name,
-    plan.max_cards,
+    subscription.contracted_cards,
     plan.max_members,
     plan.lead_capture_enabled,
     plan.analytics_enabled,
@@ -433,6 +486,229 @@ AS $function$
     )
     and plan.status = 'active'
   limit 1;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.get_organization_card_capacity(target_organization_id uuid)
+ RETURNS TABLE(subscription_id uuid, plan_id uuid, plan_name text, subscription_status text, contracted_cards integer, used_cards bigint, available_cards bigint, over_limit_by bigint, is_over_limit boolean)
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'pg_catalog'
+AS $function$
+declare
+  current_user_id uuid := auth.uid();
+  effective_plan record;
+  current_used_cards bigint;
+begin
+  if current_user_id is null then
+    raise exception using
+      errcode = '42501',
+      message = 'Autenticación requerida.';
+  end if;
+
+  if target_organization_id is null then
+    raise exception using
+      errcode = '22023',
+      message = 'La organización es obligatoria.';
+  end if;
+
+  if not exists (
+    select 1
+    from public.organization_members as member
+    where member.organization_id = target_organization_id
+      and member.user_id = current_user_id
+      and member.status = 'active'
+  ) then
+    raise exception using
+      errcode = '42501',
+      message = 'No tienes acceso a esta organización.';
+  end if;
+
+  select *
+  into effective_plan
+  from private.get_effective_plan(target_organization_id);
+
+  if not found then
+    raise exception using
+      errcode = 'P0001',
+      message = 'La organización no tiene una suscripción utilizable.';
+  end if;
+
+  select count(*)
+  into current_used_cards
+  from public.digital_cards as card
+  where card.organization_id = target_organization_id
+    and card.status in ('draft', 'published');
+
+  return query
+  select
+    effective_plan.subscription_id::uuid,
+    effective_plan.plan_id::uuid,
+    effective_plan.plan_name::text,
+    effective_plan.subscription_status::text,
+    effective_plan.max_cards::integer,
+    current_used_cards,
+    greatest(effective_plan.max_cards::bigint - current_used_cards, 0::bigint),
+    greatest(current_used_cards - effective_plan.max_cards::bigint, 0::bigint),
+    current_used_cards > effective_plan.max_cards::bigint;
+end;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.set_subscription_contracted_cards(
+  target_subscription_id uuid,
+  new_contracted_cards integer,
+  change_reason text
+)
+ RETURNS TABLE(
+   audit_id uuid,
+   organization_id uuid,
+   subscription_id uuid,
+   plan_id uuid,
+   plan_name text,
+   subscription_status text,
+   old_contracted_cards integer,
+   contracted_cards integer,
+   used_cards bigint,
+   available_cards bigint,
+   over_limit_by bigint,
+   is_over_limit boolean,
+   changed_at timestamp with time zone
+ )
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'pg_catalog'
+AS $function$
+declare
+  initial_organization_id uuid;
+  locked_organization_id uuid;
+  locked_subscription public.organization_subscriptions%rowtype;
+  locked_plan_name text;
+  normalized_reason text;
+  previous_contracted_cards integer;
+  current_used_cards bigint;
+  created_audit_id uuid;
+  audit_timestamp timestamp with time zone := statement_timestamp();
+begin
+  if target_subscription_id is null then
+    raise exception using
+      errcode = '22023',
+      message = 'La suscripción es obligatoria.';
+  end if;
+
+  if new_contracted_cards is null or new_contracted_cards < 0 then
+    raise exception using
+      errcode = '22023',
+      message = 'La cantidad contratada debe ser mayor o igual a cero.';
+  end if;
+
+  normalized_reason := btrim(coalesce(change_reason, ''));
+
+  if normalized_reason = '' or char_length(normalized_reason) > 500 then
+    raise exception using
+      errcode = '22023',
+      message = 'El motivo es obligatorio y debe tener máximo 500 caracteres.';
+  end if;
+
+  select subscription.organization_id
+  into initial_organization_id
+  from public.organization_subscriptions as subscription
+  where subscription.id = target_subscription_id;
+
+  if not found then
+    raise exception using
+      errcode = 'P0002',
+      message = 'La suscripción no existe.';
+  end if;
+
+  select organization.id
+  into locked_organization_id
+  from public.organizations as organization
+  where organization.id = initial_organization_id
+  for update;
+
+  if not found then
+    raise exception using
+      errcode = 'P0002',
+      message = 'La organización no existe.';
+  end if;
+
+  select subscription.*
+  into locked_subscription
+  from public.organization_subscriptions as subscription
+  where subscription.id = target_subscription_id
+  for update;
+
+  if not found then
+    raise exception using
+      errcode = 'P0002',
+      message = 'La suscripción no existe.';
+  end if;
+
+  if locked_subscription.organization_id is distinct from locked_organization_id then
+    raise exception using
+      errcode = '40001',
+      message = 'La organización de la suscripción cambió durante la operación. Intenta nuevamente.';
+  end if;
+
+  select plan.name
+  into locked_plan_name
+  from public.plans as plan
+  where plan.id = locked_subscription.plan_id
+  for share;
+
+  if not found then
+    raise exception using
+      errcode = 'P0002',
+      message = 'El plan de la suscripción no existe.';
+  end if;
+
+  previous_contracted_cards := locked_subscription.contracted_cards;
+
+  select count(*)
+  into current_used_cards
+  from public.digital_cards as card
+  where card.organization_id = locked_organization_id
+    and card.status in ('draft', 'published');
+
+  update public.organization_subscriptions as subscription
+  set contracted_cards = new_contracted_cards
+  where subscription.id = locked_subscription.id;
+
+  insert into public.organization_subscription_card_limit_audit (
+    organization_id,
+    subscription_id,
+    old_contracted_cards,
+    new_contracted_cards,
+    change_reason,
+    changed_at,
+    changed_by
+  )
+  values (
+    locked_organization_id,
+    locked_subscription.id,
+    previous_contracted_cards,
+    new_contracted_cards,
+    normalized_reason,
+    audit_timestamp,
+    null
+  )
+  returning id into created_audit_id;
+
+  return query
+  select
+    created_audit_id,
+    locked_organization_id,
+    locked_subscription.id,
+    locked_subscription.plan_id,
+    locked_plan_name,
+    locked_subscription.status,
+    previous_contracted_cards,
+    new_contracted_cards,
+    current_used_cards,
+    greatest(new_contracted_cards::bigint - current_used_cards, 0::bigint),
+    greatest(current_used_cards - new_contracted_cards::bigint, 0::bigint),
+    current_used_cards > new_contracted_cards::bigint,
+    audit_timestamp;
+end;
 $function$;
 
 CREATE OR REPLACE FUNCTION private.ensure_organization_has_active_owner()
@@ -1050,6 +1326,10 @@ CREATE INDEX organization_subscriptions_organization_created_at_idx ON public.or
 
 CREATE INDEX organization_subscriptions_plan_id_idx ON public.organization_subscriptions USING btree (plan_id);
 
+CREATE INDEX organization_subscription_card_limit_audit_subscription_changed_idx ON public.organization_subscription_card_limit_audit USING btree (subscription_id, changed_at DESC);
+
+CREATE INDEX organization_subscription_card_limit_audit_organization_changed_idx ON public.organization_subscription_card_limit_audit USING btree (organization_id, changed_at DESC);
+
 CREATE INDEX digital_cards_organization_status_idx ON public.digital_cards USING btree (organization_id, status) WHERE (organization_id IS NOT NULL);
 
 CREATE INDEX digital_cards_organization_updated_at_idx ON public.digital_cards USING btree (organization_id, updated_at DESC) WHERE (organization_id IS NOT NULL);
@@ -1066,6 +1346,8 @@ CREATE TRIGGER organization_members_set_updated_at BEFORE UPDATE ON organization
 
 CREATE TRIGGER organization_subscriptions_set_updated_at BEFORE UPDATE ON organization_subscriptions FOR EACH ROW EXECUTE FUNCTION private.set_updated_at();
 
+CREATE TRIGGER organization_subscription_card_limit_audit_append_only BEFORE UPDATE OR DELETE ON organization_subscription_card_limit_audit FOR EACH ROW EXECUTE FUNCTION private.prevent_subscription_card_limit_audit_mutation();
+
 CREATE TRIGGER digital_cards_set_timestamps BEFORE INSERT OR UPDATE ON digital_cards FOR EACH ROW EXECUTE FUNCTION digital_cards_set_timestamps();
 
 CREATE TRIGGER validate_card_media_reference_change BEFORE UPDATE OF photo_url, logo_url, cover_url ON digital_cards FOR EACH ROW EXECUTE FUNCTION private.validate_card_media_reference_change();
@@ -1076,6 +1358,7 @@ alter table public."plans" enable row level security;
 alter table public."organizations" enable row level security;
 alter table public."organization_members" enable row level security;
 alter table public."organization_subscriptions" enable row level security;
+alter table public."organization_subscription_card_limit_audit" enable row level security;
 alter table public."digital_cards" enable row level security;
 
 create policy "Authenticated users read active plans"
@@ -5224,6 +5507,10 @@ revoke all privileges
 on table public.organization_invitations
 from public, anon, authenticated;
 
+revoke all privileges
+on table public.organization_subscription_card_limit_audit
+from public, anon, authenticated, service_role;
+
 revoke select, insert, update, delete
 on table public.organization_invitations
 from service_role;
@@ -5250,6 +5537,7 @@ revoke all on function private.qr_capability_enabled(jsonb, text) from public, a
 revoke all on function private.lock_lead_capture_plan(uuid) from public, anon, authenticated, service_role;
 revoke all on function private.invitation_actor_role(uuid, uuid) from public, anon, authenticated, service_role;
 revoke all on function private.organization_role(uuid) from public, anon, authenticated, service_role;
+revoke all on function private.prevent_subscription_card_limit_audit_mutation() from public, anon, authenticated, service_role;
 
 revoke all on function public.digital_cards_set_timestamps() from public, anon, authenticated, service_role;
 revoke all on function public.card_services_set_updated_at() from public, anon, authenticated, service_role;
@@ -5261,6 +5549,8 @@ revoke all on function public.list_organization_members(uuid) from public, anon,
 revoke all on function public.add_organization_member_by_email(uuid, text, text) from public, anon, authenticated, service_role;
 revoke all on function public.update_organization_member(uuid, uuid, text, text) from public, anon, authenticated, service_role;
 revoke all on function public.remove_organization_member(uuid, uuid) from public, anon, authenticated, service_role;
+revoke all on function public.get_organization_card_capacity(uuid) from public, anon, authenticated, service_role;
+revoke all on function public.set_subscription_contracted_cards(uuid, integer, text) from public, anon, authenticated, service_role;
 revoke all on function public.get_organization_qr_capabilities(uuid) from public, anon, authenticated, service_role;
 revoke all on function public.set_card_media_reference(uuid, text, text) from public, anon, authenticated, service_role;
 revoke all on function public.set_card_qr_settings(uuid, text, text, boolean, numeric, text) from public, anon, authenticated, service_role;
@@ -5287,6 +5577,7 @@ grant execute on function public.list_organization_members(uuid) to authenticate
 grant execute on function public.add_organization_member_by_email(uuid, text, text) to authenticated;
 grant execute on function public.update_organization_member(uuid, uuid, text, text) to authenticated;
 grant execute on function public.remove_organization_member(uuid, uuid) to authenticated;
+grant execute on function public.get_organization_card_capacity(uuid) to authenticated;
 grant execute on function public.get_organization_qr_capabilities(uuid) to authenticated;
 grant execute on function public.set_card_media_reference(uuid, text, text) to authenticated;
 grant execute on function public.set_card_qr_settings(uuid, text, text, boolean, numeric, text) to authenticated;
@@ -5299,6 +5590,7 @@ grant execute on function public.create_public_prospect(uuid, text, text, text, 
 grant execute on function public.create_organization_invitation(uuid, text, text, bytea, timestamp with time zone, uuid) to service_role;
 grant execute on function public.resend_organization_invitation(uuid, bytea, timestamp with time zone, uuid) to service_role;
 grant execute on function public.revoke_organization_invitation(uuid, uuid) to service_role;
+grant execute on function public.set_subscription_contracted_cards(uuid, integer, text) to service_role;
 
 -- Postflight estructural y de seguridad.
 DO $baseline_postflight$
@@ -5310,6 +5602,7 @@ BEGIN
   FROM unnest(ARRAY[
     'public.plans','public.organizations','public.organization_members',
     'public.organization_subscriptions','public.digital_cards',
+    'public.organization_subscription_card_limit_audit',
     'public.card_events','public.prospects','public.card_buttons',
     'public.card_services','public.card_socials','public.organization_invitations'
   ]::text[]) AS candidate(object_name)
@@ -5333,6 +5626,8 @@ BEGIN
     'public.update_organization_card(uuid,text,text,text,text,text,text,text,text,text,text,boolean,text)',
     'public.set_card_status(uuid,text)',
     'public.list_organization_members(uuid)',
+    'public.get_organization_card_capacity(uuid)',
+    'public.set_subscription_contracted_cards(uuid,integer,text)',
     'public.set_card_media_reference(uuid,text,text)',
     'public.get_organization_qr_capabilities(uuid)',
     'public.set_card_qr_settings(uuid,text,text,boolean,numeric,text)',
@@ -5398,6 +5693,45 @@ BEGIN
     RAISE EXCEPTION 'Postflight: existe acceso directo indebido a datos protegidos.';
   END IF;
 
+  IF EXISTS (
+    SELECT 1
+    FROM pg_policies AS policy
+    WHERE policy.schemaname = 'public'
+      AND policy.tablename = 'organization_subscription_card_limit_audit'
+  )
+     OR has_table_privilege('anon', 'public.organization_subscription_card_limit_audit', 'SELECT')
+     OR has_table_privilege('anon', 'public.organization_subscription_card_limit_audit', 'INSERT')
+     OR has_table_privilege('anon', 'public.organization_subscription_card_limit_audit', 'UPDATE')
+     OR has_table_privilege('anon', 'public.organization_subscription_card_limit_audit', 'DELETE')
+     OR has_table_privilege('authenticated', 'public.organization_subscription_card_limit_audit', 'SELECT')
+     OR has_table_privilege('authenticated', 'public.organization_subscription_card_limit_audit', 'INSERT')
+     OR has_table_privilege('authenticated', 'public.organization_subscription_card_limit_audit', 'UPDATE')
+     OR has_table_privilege('authenticated', 'public.organization_subscription_card_limit_audit', 'DELETE')
+     OR has_column_privilege('anon', 'public.organization_subscriptions', 'contracted_cards', 'UPDATE')
+     OR has_column_privilege('authenticated', 'public.organization_subscriptions', 'contracted_cards', 'UPDATE')
+     OR has_column_privilege('service_role', 'public.organization_subscriptions', 'contracted_cards', 'UPDATE')
+  THEN
+    RAISE EXCEPTION 'Postflight: ACL de tarjetas contratadas no coincide.';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_class AS relation
+    WHERE relation.oid = 'public.organization_subscription_card_limit_audit'::regclass
+      AND relation.relrowsecurity
+  )
+     OR NOT EXISTS (
+       SELECT 1
+       FROM pg_trigger AS trigger
+       WHERE trigger.tgrelid = 'public.organization_subscription_card_limit_audit'::regclass
+         AND trigger.tgname = 'organization_subscription_card_limit_audit_append_only'
+         AND NOT trigger.tgisinternal
+         AND trigger.tgenabled <> 'D'
+     )
+  THEN
+    RAISE EXCEPTION 'Postflight: protección append-only de la auditoría no coincide.';
+  END IF;
+
   IF NOT has_table_privilege('anon', 'public.digital_cards', 'SELECT')
      OR NOT has_table_privilege('authenticated', 'public.digital_cards', 'SELECT')
      OR has_table_privilege('authenticated', 'public.digital_cards', 'INSERT')
@@ -5413,6 +5747,13 @@ BEGIN
      OR has_function_privilege('authenticated', 'public.create_public_prospect(uuid,text,text,text,text,boolean)', 'EXECUTE')
   THEN
     RAISE EXCEPTION 'Postflight: ACL de RPC principales no coincide.';
+  END IF;
+
+  IF has_function_privilege('anon', 'public.set_subscription_contracted_cards(uuid,integer,text)', 'EXECUTE')
+     OR has_function_privilege('authenticated', 'public.set_subscription_contracted_cards(uuid,integer,text)', 'EXECUTE')
+     OR NOT has_function_privilege('service_role', 'public.set_subscription_contracted_cards(uuid,integer,text)', 'EXECUTE')
+  THEN
+    RAISE EXCEPTION 'Postflight: ACL del setter de tarjetas contratadas no coincide.';
   END IF;
 END;
 $baseline_postflight$;
