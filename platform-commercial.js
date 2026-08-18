@@ -1,9 +1,10 @@
 (()=>{
-  const originalOpen=window.openCustomer;
-  if(typeof originalOpen!=='function'||typeof db==='undefined')return;
-  let commercial=null,plans=[],history=[];
+  if(typeof db==='undefined')return;
+  let commercial=null,plans=[],history=[],currentOrgId=null,loadingOrgId=null;
   async function commercialInvoke(body){const {data,error}=await db.functions.invoke('platform-commercial-admin',{body});if(error)throw error;return data?.data??data}
   async function loadCommercial(orgId){
+    if(!orgId||loadingOrgId===orgId)return;
+    loadingOrgId=orgId;
     try{
       const [detailResult,planResult]=await Promise.all([
         commercialInvoke({action:'get_customer_commercial',organization_id:orgId}),
@@ -13,11 +14,24 @@
       plans=Array.isArray(planResult)?planResult:[];
       history=commercial?.subscription_id?await commercialInvoke({action:'list_commercial_history',subscription_id:commercial.subscription_id,page:1,page_size:25}):[];
       drawCommercial();
-    }catch(e){console.error('commercial admin load failed',e)}
+    }catch(e){console.error('commercial admin load failed',e)}finally{loadingOrgId=null}
   }
-  window.openCustomer=async function(orgId){await originalOpen(orgId);void loadCommercial(orgId)};
+  function detailIsVisible(){const main=document.getElementById('main');return !!main&&!!main.querySelector('.detail-head')&&!main.querySelector('tbody tr[onclick*="openCustomer"]')}
+  function maybeLoad(){if(currentOrgId&&detailIsVisible()&&!document.getElementById('commercial-admin-panel'))void loadCommercial(currentOrgId)}
+  document.addEventListener('click',event=>{
+    const row=event.target.closest('tr[onclick*="openCustomer"]');
+    if(!row)return;
+    const code=row.getAttribute('onclick')||'';
+    const match=code.match(/openCustomer\(['\"]([^'\"]+)['\"]\)/);
+    if(!match)return;
+    currentOrgId=match[1];commercial=null;plans=[];history=[];
+    setTimeout(maybeLoad,80);
+    setTimeout(maybeLoad,300);
+    setTimeout(maybeLoad,900);
+  },true);
+  new MutationObserver(()=>maybeLoad()).observe(document.body,{subtree:true,childList:true});
   function drawCommercial(){
-    const main=document.getElementById('main');if(!main||!commercial)return;
+    const main=document.getElementById('main');if(!main||!commercial||!detailIsVisible())return;
     document.getElementById('commercial-admin-panel')?.remove();
     const c=commercial,noSub=!c.subscription_id;
     const options=plans.map(p=>`<option value="${esc(p.plan_id)}" ${p.plan_id===c.plan_id?'selected':''}>${esc(p.plan_name)}${p.max_cards!=null?' · '+esc(p.max_cards)+' tarjetas':''}</option>`).join('');
@@ -30,7 +44,7 @@
     const btn=e.currentTarget.querySelector('button[type=submit]');btn.disabled=true;const old=btn.textContent;btn.textContent='Guardando…';
     try{
       await commercialInvoke({action:'set_commercial',subscription_id:commercial.subscription_id,expected_plan_id:commercial.plan_id,expected_status:commercial.subscription_status,new_plan_id:document.getElementById('commercial-plan').value,new_status:document.getElementById('commercial-status').value,change_reason:document.getElementById('commercial-reason').value});
-      await refreshDetail();await loadCommercial(commercial.organization_id);
+      await refreshDetail();await loadCommercial(currentOrgId);
     }catch(err){alert('No fue posible guardar el cambio comercial. Actualiza los datos e intenta nuevamente.');console.error(err)}finally{btn.disabled=false;btn.textContent=old}
   };
 })();
