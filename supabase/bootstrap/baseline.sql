@@ -1713,7 +1713,9 @@ begin
     and member.user_id = current_user_id
     and member.status = 'active';
 
-  if caller_role not in ('owner', 'admin') then
+  if caller_role is null
+     or caller_role not in ('owner', 'admin')
+  then
     raise exception using
       errcode = '42501',
       message = 'No tienes permiso para administrar miembros.';
@@ -1735,7 +1737,7 @@ begin
 
   select
     count(*),
-    min(auth_user.id)
+    (array_agg(auth_user.id order by auth_user.id))[1]
   into
     eligible_user_count,
     target_auth_user_id
@@ -1852,7 +1854,9 @@ begin
     and member.user_id = current_user_id
     and member.status = 'active';
 
-  if caller_role not in ('owner', 'admin') then
+  if caller_role is null
+     or caller_role not in ('owner', 'admin')
+  then
     raise exception using
       errcode = '42501',
       message = 'No tienes permiso para administrar miembros.';
@@ -2013,7 +2017,9 @@ begin
     and member.user_id = current_user_id
     and member.status = 'active';
 
-  if caller_role not in ('owner', 'admin') then
+  if caller_role is null
+     or caller_role not in ('owner', 'admin')
+  then
     raise exception using
       errcode = '42501',
       message = 'No tienes permiso para administrar miembros.';
