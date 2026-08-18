@@ -7,11 +7,9 @@
   const response=await fetch('/index.html',{cache:'no-store'});
   if(!response.ok){document.body.textContent='No se pudo cargar el panel administrativo.';return;}
   let html=await response.text();
-  html=html.replace('<title>Digital Card</title>','<title>Digital Card · PR2</title>');
-  html=html.replace('<body>','<body><div id="pa-debug" style="position:fixed;z-index:99999;right:12px;bottom:12px;padding:6px 9px;border-radius:8px;background:#111827;color:#fff;font:12px/1.2 system-ui">PR2 · cargado</div>');
 
   const dbNeedle='const db=supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY);';
-  const dbReplacement=`${dbNeedle}\n  let platformAdminAuthorized=false,platformAdminCheckStarted=false;\n  function platformAdminDebug(text){const el=document.getElementById('pa-debug');if(el)el.textContent='PR2 · '+text}\n  async function checkPlatformAdminAccess(){\n    if(platformAdminCheckStarted||!state?.session)return;\n    platformAdminCheckStarted=true;platformAdminDebug('verificando');\n    try{\n      const {data,error}=await db.functions.invoke('platform-admin',{body:{action:'list_customers',search_text:'',page:1,page_size:1}});\n      platformAdminAuthorized=!error&&data?.ok===true;\n      platformAdminDebug(platformAdminAuthorized?'AUTORIZADO':('DENEGADO'+(error?.context?.status?' '+error.context.status:'')));\n    }catch(error){platformAdminAuthorized=false;platformAdminDebug('ERROR')}\n    if(platformAdminAuthorized)render();\n  }`;
+  const dbReplacement=`${dbNeedle}\n  let platformAdminAuthorized=false,platformAdminCheckStarted=false;\n  async function checkPlatformAdminAccess(){\n    if(platformAdminCheckStarted||!state?.session)return;\n    platformAdminCheckStarted=true;\n    try{\n      const {data,error}=await db.functions.invoke('platform-admin',{body:{action:'list_customers',search_text:'',page:1,page_size:1}});\n      platformAdminAuthorized=!error&&data?.ok===true;\n    }catch{platformAdminAuthorized=false}\n    if(platformAdminAuthorized)render();\n  }`;
   html=html.replace(dbNeedle,dbReplacement);
 
   const desktopNeedle='</nav><button class="mobile-logout"';
