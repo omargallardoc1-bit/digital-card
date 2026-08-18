@@ -12,9 +12,9 @@
   const dbReplacement=`${dbNeedle}\n  let platformAdminAuthorized=false,platformAdminCheckedUserId=null,platformAdminCheckInFlight=false;\n  async function checkPlatformAdminAccess(){\n    const userId=state?.session?.user?.id||null;\n    if(!userId){platformAdminAuthorized=false;platformAdminCheckedUserId=null;return}\n    if(platformAdminCheckInFlight||platformAdminCheckedUserId===userId)return;\n    platformAdminAuthorized=false;platformAdminCheckedUserId=userId;platformAdminCheckInFlight=true;\n    try{\n      const {data,error}=await db.functions.invoke('platform-admin',{body:{action:'list_customers',search_text:'',page:1,page_size:1}});\n      platformAdminAuthorized=!error&&data?.ok===true;\n    }catch{platformAdminAuthorized=false}\n    finally{platformAdminCheckInFlight=false}\n    render();\n  }`;
   html=html.replace(dbNeedle,dbReplacement);
 
-  const navNeedle="${visibleNavItems().map(([key,label])=>`<button type=\"button\" class=\"${state.page===key?'active':''}\" onclick=\"go('${key}')\" aria-label=\"${esc(label)}\" ${state.page===key?'aria-current=\"page\"':''}>${uiIcon(key)}<span>${label}</span></button>`).join('')}";
-  const navReplacement="${visibleNavItems().map(([key,label])=>`<button type=\"button\" class=\"${state.page===key?'active':''}\" onclick=\"go('${key}')\" aria-label=\"${esc(label)}\" ${state.page===key?'aria-current=\"page\"':''}>${uiIcon(key)}<span>${label}</span></button>`).join('')}${platformAdminAuthorized?`<button type=\"button\" onclick=\"location.assign('/platform-admin')\" aria-label=\"Superadministración\">${uiIcon('organization')}<span>Superadministración</span></button>`:''}";
-  html=html.replace(navNeedle,navReplacement);
+  const desktopNeedle='</nav><button class="mobile-logout"';
+  const desktopReplacement='${platformAdminAuthorized?`<button type="button" onclick="location.assign(\'/platform-admin\')" aria-label="Superadministración">${uiIcon(\'organization\')}<span>Superadministración</span></button>`:\'\'}</nav><button class="mobile-logout"';
+  html=html.replace(desktopNeedle,desktopReplacement);
 
   html=html.replace('function render(){','function render(){const platformUserId=state?.session?.user?.id||null;if(platformAdminCheckedUserId!==platformUserId){platformAdminAuthorized=false;queueMicrotask(()=>checkPlatformAdminAccess())}');
 
