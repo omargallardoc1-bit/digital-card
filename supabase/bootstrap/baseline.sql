@@ -63,8 +63,8 @@ BEGIN
   SELECT candidate.object_name
   INTO existing_object
   FROM unnest(ARRAY[
-    'public.create_organization_card(uuid,text,text,text,text,text,text,text,text,text,text,text,boolean)',
-    'public.update_organization_card(uuid,text,text,text,text,text,text,text,text,text,text,boolean)',
+    'public.create_organization_card(uuid,text,text,text,text,text,text,text,text,text,text,text,boolean,text)',
+    'public.update_organization_card(uuid,text,text,text,text,text,text,text,text,text,text,boolean,text)',
     'public.set_card_status(uuid,text)',
     'public.list_organization_members(uuid)',
     'public.set_card_media_reference(uuid,text,text)',
@@ -341,6 +341,7 @@ create table public."digital_cards" (
   "slogan" text default 'Tu marca. Tu conexión.'::text,
   "description" text,
   "phone" text,
+  "secondary_phone" text,
   "whatsapp" text,
   "email" text,
   "website" text,
@@ -365,6 +366,7 @@ create table public."digital_cards" (
   constraint "digital_cards_owner_id_fkey" FOREIGN KEY (owner_id) REFERENCES auth.users(id) ON DELETE RESTRICT,
   constraint "digital_cards_pkey" PRIMARY KEY (id),
   constraint "digital_cards_qr_settings_check" CHECK (jsonb_typeof(qr_settings) = 'object'::text AND qr_settings ?& ARRAY['dark_color'::text, 'light_color'::text, 'use_logo'::text, 'logo_scale'::text, 'premium_style'::text] AND (qr_settings - ARRAY['dark_color'::text, 'light_color'::text, 'use_logo'::text, 'logo_scale'::text, 'premium_style'::text]) = '{}'::jsonb AND jsonb_typeof(qr_settings -> 'dark_color'::text) = 'string'::text AND (qr_settings ->> 'dark_color'::text) ~ '^#[0-9A-F]{6}$'::text AND jsonb_typeof(qr_settings -> 'light_color'::text) = 'string'::text AND (qr_settings ->> 'light_color'::text) ~ '^#[0-9A-F]{6}$'::text AND jsonb_typeof(qr_settings -> 'use_logo'::text) = 'boolean'::text AND jsonb_typeof(qr_settings -> 'logo_scale'::text) = 'number'::text AND ((qr_settings ->> 'logo_scale'::text)::numeric) >= 0.10 AND ((qr_settings ->> 'logo_scale'::text)::numeric) <= 0.18 AND jsonb_typeof(qr_settings -> 'premium_style'::text) = 'string'::text AND (qr_settings ->> 'premium_style'::text) = 'standard'::text AND private.qr_relative_luminance(qr_settings ->> 'dark_color'::text) < private.qr_relative_luminance(qr_settings ->> 'light_color'::text) AND private.qr_contrast_ratio(qr_settings ->> 'dark_color'::text, qr_settings ->> 'light_color'::text) >= 4.5),
+  constraint "digital_cards_secondary_phone_length_check" CHECK (secondary_phone IS NULL OR char_length(secondary_phone) <= 40),
   constraint "digital_cards_slug_key" UNIQUE (slug),
   constraint "digital_cards_status_check" CHECK (status = ANY (ARRAY['draft'::text, 'published'::text, 'archived'::text])),
   constraint "digital_cards_theme_object_check" CHECK (jsonb_typeof(theme) = 'object'::text)
@@ -596,7 +598,7 @@ begin
 end;
 $function$;
 
-CREATE OR REPLACE FUNCTION public.create_organization_card(target_organization_id uuid, card_slug text, card_name text, card_position text DEFAULT NULL::text, card_company text DEFAULT NULL::text, card_slogan text DEFAULT NULL::text, card_description text DEFAULT NULL::text, card_phone text DEFAULT NULL::text, card_whatsapp text DEFAULT NULL::text, card_email text DEFAULT NULL::text, card_website text DEFAULT NULL::text, card_location text DEFAULT NULL::text, card_capture_enabled boolean DEFAULT false)
+CREATE OR REPLACE FUNCTION public.create_organization_card(target_organization_id uuid, card_slug text, card_name text, card_position text DEFAULT NULL::text, card_company text DEFAULT NULL::text, card_slogan text DEFAULT NULL::text, card_description text DEFAULT NULL::text, card_phone text DEFAULT NULL::text, card_whatsapp text DEFAULT NULL::text, card_email text DEFAULT NULL::text, card_website text DEFAULT NULL::text, card_location text DEFAULT NULL::text, card_capture_enabled boolean DEFAULT false, card_secondary_phone text DEFAULT NULL::text)
  RETURNS digital_cards
  LANGUAGE plpgsql
  SECURITY DEFINER
@@ -648,6 +650,7 @@ begin
      or char_length(coalesce(card_slogan, '')) > 200
      or char_length(coalesce(card_description, '')) > 2000
      or char_length(coalesce(card_phone, '')) > 40
+     or char_length(coalesce(card_secondary_phone, '')) > 40
      or char_length(coalesce(card_whatsapp, '')) > 40
      or char_length(coalesce(card_email, '')) > 254
      or char_length(coalesce(card_website, '')) > 500
@@ -720,6 +723,7 @@ begin
     slogan,
     description,
     phone,
+    secondary_phone,
     whatsapp,
     email,
     website,
@@ -737,6 +741,7 @@ begin
     nullif(btrim(coalesce(card_slogan, '')), ''),
     nullif(btrim(coalesce(card_description, '')), ''),
     nullif(btrim(coalesce(card_phone, '')), ''),
+    nullif(btrim(coalesce(card_secondary_phone, '')), ''),
     nullif(btrim(coalesce(card_whatsapp, '')), ''),
     nullif(btrim(coalesce(card_email, '')), ''),
     nullif(btrim(coalesce(card_website, '')), ''),
@@ -753,7 +758,7 @@ begin
 end;
 $function$;
 
-CREATE OR REPLACE FUNCTION public.update_organization_card(target_card_id uuid, card_name text, card_position text DEFAULT NULL::text, card_company text DEFAULT NULL::text, card_slogan text DEFAULT NULL::text, card_description text DEFAULT NULL::text, card_phone text DEFAULT NULL::text, card_whatsapp text DEFAULT NULL::text, card_email text DEFAULT NULL::text, card_website text DEFAULT NULL::text, card_location text DEFAULT NULL::text, card_capture_enabled boolean DEFAULT false)
+CREATE OR REPLACE FUNCTION public.update_organization_card(target_card_id uuid, card_name text, card_position text DEFAULT NULL::text, card_company text DEFAULT NULL::text, card_slogan text DEFAULT NULL::text, card_description text DEFAULT NULL::text, card_phone text DEFAULT NULL::text, card_whatsapp text DEFAULT NULL::text, card_email text DEFAULT NULL::text, card_website text DEFAULT NULL::text, card_location text DEFAULT NULL::text, card_capture_enabled boolean DEFAULT false, card_secondary_phone text DEFAULT NULL::text)
  RETURNS digital_cards
  LANGUAGE plpgsql
  SECURITY DEFINER
@@ -793,6 +798,7 @@ begin
      or char_length(coalesce(card_slogan, '')) > 200
      or char_length(coalesce(card_description, '')) > 2000
      or char_length(coalesce(card_phone, '')) > 40
+     or char_length(coalesce(card_secondary_phone, '')) > 40
      or char_length(coalesce(card_whatsapp, '')) > 40
      or char_length(coalesce(card_email, '')) > 254
      or char_length(coalesce(card_website, '')) > 500
@@ -846,6 +852,7 @@ begin
     slogan = nullif(btrim(coalesce(card_slogan, '')), ''),
     description = nullif(btrim(coalesce(card_description, '')), ''),
     phone = nullif(btrim(coalesce(card_phone, '')), ''),
+    secondary_phone = nullif(btrim(coalesce(card_secondary_phone, '')), ''),
     whatsapp = nullif(btrim(coalesce(card_whatsapp, '')), ''),
     email = nullif(btrim(coalesce(card_email, '')), ''),
     website = nullif(btrim(coalesce(card_website, '')), ''),
@@ -5247,8 +5254,8 @@ revoke all on function private.organization_role(uuid) from public, anon, authen
 revoke all on function public.digital_cards_set_timestamps() from public, anon, authenticated, service_role;
 revoke all on function public.card_services_set_updated_at() from public, anon, authenticated, service_role;
 revoke all on function public.record_lead_created_event() from public, anon, authenticated, service_role;
-revoke all on function public.create_organization_card(uuid, text, text, text, text, text, text, text, text, text, text, text, boolean) from public, anon, authenticated, service_role;
-revoke all on function public.update_organization_card(uuid, text, text, text, text, text, text, text, text, text, text, boolean) from public, anon, authenticated, service_role;
+revoke all on function public.create_organization_card(uuid, text, text, text, text, text, text, text, text, text, text, text, boolean, text) from public, anon, authenticated, service_role;
+revoke all on function public.update_organization_card(uuid, text, text, text, text, text, text, text, text, text, text, boolean, text) from public, anon, authenticated, service_role;
 revoke all on function public.set_card_status(uuid, text) from public, anon, authenticated, service_role;
 revoke all on function public.list_organization_members(uuid) from public, anon, authenticated, service_role;
 revoke all on function public.add_organization_member_by_email(uuid, text, text) from public, anon, authenticated, service_role;
@@ -5273,8 +5280,8 @@ grant execute on function private.card_media_delete_allowed(text) to authenticat
 grant execute on function private.card_media_read_allowed(text) to authenticated;
 grant execute on function private.card_media_upload_allowed(text, jsonb) to authenticated;
 
-grant execute on function public.create_organization_card(uuid, text, text, text, text, text, text, text, text, text, text, text, boolean) to authenticated;
-grant execute on function public.update_organization_card(uuid, text, text, text, text, text, text, text, text, text, text, boolean) to authenticated;
+grant execute on function public.create_organization_card(uuid, text, text, text, text, text, text, text, text, text, text, text, boolean, text) to authenticated;
+grant execute on function public.update_organization_card(uuid, text, text, text, text, text, text, text, text, text, text, boolean, text) to authenticated;
 grant execute on function public.set_card_status(uuid, text) to authenticated;
 grant execute on function public.list_organization_members(uuid) to authenticated;
 grant execute on function public.add_organization_member_by_email(uuid, text, text) to authenticated;
@@ -5322,8 +5329,8 @@ BEGIN
     'private.lock_lead_capture_plan(uuid)',
     'private.invitation_actor_role(uuid,uuid)',
     'private.organization_role(uuid)',
-    'public.create_organization_card(uuid,text,text,text,text,text,text,text,text,text,text,text,boolean)',
-    'public.update_organization_card(uuid,text,text,text,text,text,text,text,text,text,text,boolean)',
+    'public.create_organization_card(uuid,text,text,text,text,text,text,text,text,text,text,text,boolean,text)',
+    'public.update_organization_card(uuid,text,text,text,text,text,text,text,text,text,text,boolean,text)',
     'public.set_card_status(uuid,text)',
     'public.list_organization_members(uuid)',
     'public.set_card_media_reference(uuid,text,text)',
@@ -5400,8 +5407,8 @@ BEGIN
     RAISE EXCEPTION 'Postflight: ACL de digital_cards no coincide.';
   END IF;
 
-  IF NOT has_function_privilege('authenticated', 'public.create_organization_card(uuid,text,text,text,text,text,text,text,text,text,text,text,boolean)', 'EXECUTE')
-     OR has_function_privilege('anon', 'public.create_organization_card(uuid,text,text,text,text,text,text,text,text,text,text,text,boolean)', 'EXECUTE')
+  IF NOT has_function_privilege('authenticated', 'public.create_organization_card(uuid,text,text,text,text,text,text,text,text,text,text,text,boolean,text)', 'EXECUTE')
+     OR has_function_privilege('anon', 'public.create_organization_card(uuid,text,text,text,text,text,text,text,text,text,text,text,boolean,text)', 'EXECUTE')
      OR NOT has_function_privilege('service_role', 'public.create_public_prospect(uuid,text,text,text,text,boolean)', 'EXECUTE')
      OR has_function_privilege('authenticated', 'public.create_public_prospect(uuid,text,text,text,text,boolean)', 'EXECUTE')
   THEN
