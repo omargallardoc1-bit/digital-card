@@ -1,0 +1,50 @@
+(()=>{
+  if(typeof db==='undefined')return;
+  let commercial=null,plans=[],history=[],currentOrgId=null,loadingOrgId=null;
+  async function commercialInvoke(body){const {data,error}=await db.functions.invoke('platform-commercial-admin',{body});if(error)throw error;return data?.data??data}
+  async function loadCommercial(orgId){
+    if(!orgId||loadingOrgId===orgId)return;
+    loadingOrgId=orgId;
+    try{
+      const [detailResult,planResult]=await Promise.all([
+        commercialInvoke({action:'get_customer_commercial',organization_id:orgId}),
+        commercialInvoke({action:'list_plans'})
+      ]);
+      commercial=Array.isArray(detailResult)?detailResult[0]:detailResult;
+      plans=Array.isArray(planResult)?planResult:[];
+      history=commercial?.subscription_id?await commercialInvoke({action:'list_commercial_history',subscription_id:commercial.subscription_id,page:1,page_size:25}):[];
+      drawCommercial();
+    }catch(e){console.error('commercial admin load failed',e)}finally{loadingOrgId=null}
+  }
+  function detailIsVisible(){const main=document.getElementById('main');return !!main&&!!main.querySelector('.detail-head')&&!main.querySelector('tbody tr[onclick*="openCustomer"]')}
+  function maybeLoad(){if(currentOrgId&&detailIsVisible()&&!document.getElementById('commercial-admin-panel'))void loadCommercial(currentOrgId)}
+  document.addEventListener('click',event=>{
+    const row=event.target.closest('tr[onclick*="openCustomer"]');
+    if(!row)return;
+    const code=row.getAttribute('onclick')||'';
+    const match=code.match(/openCustomer\(['\"]([^'\"]+)['\"]\)/);
+    if(!match)return;
+    currentOrgId=match[1];commercial=null;plans=[];history=[];
+    setTimeout(maybeLoad,80);
+    setTimeout(maybeLoad,300);
+    setTimeout(maybeLoad,900);
+  },true);
+  new MutationObserver(()=>maybeLoad()).observe(document.body,{subtree:true,childList:true});
+  function drawCommercial(){
+    const main=document.getElementById('main');if(!main||!commercial||!detailIsVisible())return;
+    document.getElementById('commercial-admin-panel')?.remove();
+    const c=commercial,noSub=!c.subscription_id;
+    const options=plans.map(p=>`<option value="${esc(p.plan_id)}" ${p.plan_id===c.plan_id?'selected':''}>${esc(p.plan_name)}${p.max_cards!=null?' · '+esc(p.max_cards)+' tarjetas':''}</option>`).join('');
+    const statuses=['trial','active','past_due','cancelled','expired'].map(s=>`<option value="${s}" ${s===c.subscription_status?'selected':''}>${s}</option>`).join('');
+    const rows=(Array.isArray(history)?history:[]).map(h=>`<tr><td>${esc(formatDate(h.changed_at))}</td><td>${esc(h.old_plan_name||'—')} → ${esc(h.new_plan_name||'—')}</td><td>${esc(h.old_status||'—')} → ${esc(h.new_status||'—')}</td><td>${esc(h.change_reason||'—')}</td><td>${esc(h.changed_by_display_name||'—')}</td></tr>`).join('');
+    main.insertAdjacentHTML('beforeend',`<section class="panel" id="commercial-admin-panel" style="margin-top:18px"><div class="detail-head"><div><h3>Gestión comercial</h3><p>Plan y estado de la suscripción. Cada cambio queda auditado.</p></div></div><div class="grid"><div class="stat"><span>Organización</span><strong style="font-size:16px">${esc(c.organization_name)}</strong></div><div class="stat"><span>Correo</span><strong style="font-size:14px">${esc(c.organization_email||'—')}</strong></div><div class="stat"><span>Renovación</span><strong style="font-size:16px">${esc(c.renewal_type||'—')}</strong></div><div class="stat"><span>Importe</span><strong style="font-size:16px">${c.amount==null?'—':esc(c.amount)+' '+esc(c.currency||'')}</strong></div></div>${noSub?'<div class="error">Esta organización no tiene una suscripción que pueda editarse.</div>':`<form class="edit-grid" onsubmit="saveCommercial(event)"><div><label for="commercial-plan">Plan</label><select id="commercial-plan" style="width:100%;border:1px solid #d0d5dd;border-radius:10px;padding:10px 12px;background:#fff">${options}</select></div><div><label for="commercial-status">Estado</label><select id="commercial-status" style="width:100%;border:1px solid #d0d5dd;border-radius:10px;padding:10px 12px;background:#fff">${statuses}</select></div><div></div><div style="grid-column:1/3"><label for="commercial-reason">Motivo del cambio</label><textarea id="commercial-reason" maxlength="500" placeholder="Ej. Cambio de plan acordado con el cliente" required></textarea></div><button class="primary" type="submit">Guardar plan / estado</button></form>`}<div class="history"><h4>Historial comercial</h4>${rows?`<div class="table-wrap"><table class="table"><thead><tr><th>Fecha</th><th>Plan</th><th>Estado</th><th>Motivo</th><th>Superadmin</th></tr></thead><tbody>${rows}</tbody></table></div>`:'<div class="empty">Aún no hay cambios comerciales registrados.</div>'}</div></section>`);
+  }
+  window.saveCommercial=async function(e){
+    e.preventDefault();if(!commercial?.subscription_id)return;
+    const btn=e.currentTarget.querySelector('button[type=submit]');btn.disabled=true;const old=btn.textContent;btn.textContent='Guardando…';
+    try{
+      await commercialInvoke({action:'set_commercial',subscription_id:commercial.subscription_id,expected_plan_id:commercial.plan_id,expected_status:commercial.subscription_status,new_plan_id:document.getElementById('commercial-plan').value,new_status:document.getElementById('commercial-status').value,change_reason:document.getElementById('commercial-reason').value});
+      await refreshDetail();await loadCommercial(currentOrgId);
+    }catch(err){alert('No fue posible guardar el cambio comercial. Actualiza los datos e intenta nuevamente.');console.error(err)}finally{btn.disabled=false;btn.textContent=old}
+  };
+})();
