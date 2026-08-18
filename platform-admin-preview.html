@@ -8,6 +8,7 @@
   if(!response.ok){document.body.textContent='No se pudo cargar el preview de administración.';return;}
   let html=await response.text();
   html=html.replace("db.functions.invoke('platform-admin',{body})","db.functions.invoke('platform-admin-preview',{body})");
+  html=html.replace("search_text:state.search||null","search_text:state.search||''");
   document.open();
   document.write(html);
   document.close();
