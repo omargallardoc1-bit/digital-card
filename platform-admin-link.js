@@ -2,7 +2,6 @@
   const LABEL_ES='Superadministración',LABEL_EN='Platform admin';
   let authorized=false,checking=false;
   function label(){return document.documentElement.lang==='en'?LABEL_EN:LABEL_ES}
-  function client(){try{return typeof db!=='undefined'?db:(window.db||window.supabaseClient||null)}catch{return window.db||window.supabaseClient||null}}
   function addLinks(){
     if(!authorized)return;
     const side=document.querySelector('.side-nav');
@@ -15,7 +14,7 @@
     }
   }
   async function check(){
-    if(checking)return;const supabaseClient=client();if(!supabaseClient?.auth||!supabaseClient?.functions)return;
+    if(checking)return;const supabaseClient=window.__mxDb;if(!supabaseClient?.auth||!supabaseClient?.functions)return;
     checking=true;
     try{const {data:{session}}=await supabaseClient.auth.getSession();if(!session){authorized=false;return}const {data,error}=await supabaseClient.functions.invoke('platform-admin',{body:{action:'list_customers',search_text:'',page:1,page_size:1}});authorized=!error&&data?.ok===true}catch{authorized=false}finally{checking=false;addLinks()}
   }
