@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="es">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>MX Business Card</title></head>
+<body>
+<script>
+(async()=>{
+  const response=await fetch('/index.html',{cache:'no-store'});
+  if(!response.ok){document.body.textContent='No se pudo cargar el panel administrativo.';return;}
+  let html=await response.text();
+  html=html.replace('</body>','<script src="/platform-admin-link.js"><\/script></body>');
+  document.open();
+  document.write(html);
+  document.close();
+})().catch(()=>{document.body.textContent='No se pudo cargar el panel administrativo.'});
+</script>
+</body>
+</html>
