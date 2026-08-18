@@ -832,6 +832,173 @@ begin
 end;
 $function$;
 
+create or replace function public.set_subscription_contracted_cards_by_admin(
+  actor_user_id uuid,
+  target_subscription_id uuid,
+  expected_contracted_cards integer,
+  new_contracted_cards integer,
+  change_reason text
+)
+returns table(
+  subscription_id uuid,
+  organization_id uuid,
+  old_contracted_cards integer,
+  contracted_cards integer,
+  used_cards bigint,
+  available_cards bigint,
+  over_limit_by bigint,
+  is_over_limit boolean,
+  changed_by uuid
+)
+language plpgsql
+security definer
+set search_path to 'pg_catalog'
+as $function$
+declare
+  initial_organization_id uuid;
+  locked_organization_id uuid;
+  locked_subscription public.organization_subscriptions%rowtype;
+  locked_plan_id uuid;
+  normalized_reason text;
+  previous_contracted_cards integer;
+  current_used_cards bigint;
+begin
+  if private.platform_admin_role(actor_user_id) is distinct from 'superadmin' then
+    raise exception using
+      errcode = '42501',
+      message = 'No tienes autorización de administración de plataforma.';
+  end if;
+
+  if target_subscription_id is null then
+    raise exception using
+      errcode = '22023',
+      message = 'La suscripción es obligatoria.';
+  end if;
+
+  if expected_contracted_cards is null or expected_contracted_cards < 0 then
+    raise exception using
+      errcode = '22023',
+      message = 'La cantidad esperada debe ser mayor o igual a cero.';
+  end if;
+
+  if new_contracted_cards is null or new_contracted_cards < 0 then
+    raise exception using
+      errcode = '22023',
+      message = 'La cantidad contratada debe ser mayor o igual a cero.';
+  end if;
+
+  normalized_reason := btrim(coalesce(change_reason, ''));
+
+  if normalized_reason = '' or char_length(normalized_reason) > 500 then
+    raise exception using
+      errcode = '22023',
+      message = 'El motivo es obligatorio y debe tener máximo 500 caracteres.';
+  end if;
+
+  select subscription.organization_id
+  into initial_organization_id
+  from public.organization_subscriptions as subscription
+  where subscription.id = target_subscription_id;
+
+  if not found then
+    raise exception using
+      errcode = 'P0002',
+      message = 'La suscripción no existe.';
+  end if;
+
+  select organization.id
+  into locked_organization_id
+  from public.organizations as organization
+  where organization.id = initial_organization_id
+  for update;
+
+  if not found then
+    raise exception using
+      errcode = 'P0002',
+      message = 'La organización no existe.';
+  end if;
+
+  select subscription.*
+  into locked_subscription
+  from public.organization_subscriptions as subscription
+  where subscription.id = target_subscription_id
+  for update;
+
+  if not found then
+    raise exception using
+      errcode = 'P0002',
+      message = 'La suscripción no existe.';
+  end if;
+
+  if locked_subscription.organization_id is distinct from locked_organization_id then
+    raise exception using
+      errcode = '40001',
+      message = 'La organización de la suscripción cambió durante la operación. Intenta nuevamente.';
+  end if;
+
+  select plan.id
+  into locked_plan_id
+  from public.plans as plan
+  where plan.id = locked_subscription.plan_id
+  for share;
+
+  if not found then
+    raise exception using
+      errcode = 'P0002',
+      message = 'El plan de la suscripción no existe.';
+  end if;
+
+  previous_contracted_cards := locked_subscription.contracted_cards;
+
+  if previous_contracted_cards is distinct from expected_contracted_cards then
+    raise exception using
+      errcode = '40001',
+      message = 'La cantidad contratada cambió desde la última lectura. Actualiza los datos e intenta nuevamente.';
+  end if;
+
+  select count(*)
+  into current_used_cards
+  from public.digital_cards as card
+  where card.organization_id = locked_organization_id
+    and card.status in ('draft', 'published');
+
+  update public.organization_subscriptions as subscription
+  set contracted_cards = new_contracted_cards
+  where subscription.id = locked_subscription.id;
+
+  insert into public.organization_subscription_card_limit_audit (
+    organization_id,
+    subscription_id,
+    old_contracted_cards,
+    new_contracted_cards,
+    change_reason,
+    changed_at,
+    changed_by
+  )
+  values (
+    locked_organization_id,
+    locked_subscription.id,
+    previous_contracted_cards,
+    new_contracted_cards,
+    normalized_reason,
+    statement_timestamp(),
+    actor_user_id
+  );
+
+  return query
+  select
+    locked_subscription.id,
+    locked_organization_id,
+    previous_contracted_cards,
+    new_contracted_cards,
+    current_used_cards,
+    greatest(new_contracted_cards::bigint - current_used_cards, 0::bigint),
+    greatest(current_used_cards - new_contracted_cards::bigint, 0::bigint),
+    current_used_cards > new_contracted_cards::bigint,
+    actor_user_id;
+end;
+$function$;
+
 CREATE OR REPLACE FUNCTION private.ensure_organization_has_active_owner()
  RETURNS trigger
  LANGUAGE plpgsql
@@ -994,6 +1161,355 @@ begin
   return new;
 end;
 $function$;
+
+create or replace function public.list_platform_customers(
+  actor_user_id uuid,
+  search_text text,
+  page integer,
+  page_size integer
+)
+returns table(
+  organization_id uuid,
+  organization_name text,
+  subscription_id uuid,
+  plan_id uuid,
+  plan_name text,
+  subscription_status text,
+  contracted_cards integer,
+  used_cards bigint,
+  available_cards bigint,
+  over_limit_by bigint,
+  is_over_limit boolean,
+  total_count bigint
+)
+language plpgsql
+stable
+security definer
+set search_path to 'pg_catalog'
+as $function$
+declare
+  normalized_search text := nullif(btrim(coalesce(search_text, '')), '');
+begin
+  if private.platform_admin_role(actor_user_id) is distinct from 'superadmin' then
+    raise exception using
+      errcode = '42501',
+      message = 'No tienes autorización de administración de plataforma.';
+  end if;
+
+  if page is null or page < 1 then
+    raise exception using
+      errcode = '22023',
+      message = 'La página debe ser mayor o igual a 1.';
+  end if;
+
+  if page_size is null or page_size < 1 or page_size > 100 then
+    raise exception using
+      errcode = '22023',
+      message = 'El tamaño de página debe estar entre 1 y 100.';
+  end if;
+
+  if normalized_search is not null and char_length(normalized_search) > 160 then
+    raise exception using
+      errcode = '22023',
+      message = 'La búsqueda debe tener máximo 160 caracteres.';
+  end if;
+
+  if exists (
+    select 1
+    from public.organization_subscriptions as subscription
+    join public.organizations as organization
+      on organization.id = subscription.organization_id
+    join public.plans as plan
+      on plan.id = subscription.plan_id
+    where organization.status = 'active'
+      and subscription.status in ('trial', 'active', 'past_due')
+      and subscription.starts_at <= now()
+      and (subscription.expires_at is null or subscription.expires_at > now())
+      and plan.status = 'active'
+    group by subscription.organization_id
+    having count(*) > 1
+  ) then
+    raise exception using
+      errcode = 'P0001',
+      message = 'Se detectaron múltiples suscripciones efectivas para una organización.';
+  end if;
+
+  return query
+  with effective_subscription as (
+    select
+      subscription.organization_id,
+      subscription.id as subscription_id,
+      subscription.plan_id,
+      plan.name as plan_name,
+      subscription.status as subscription_status,
+      subscription.contracted_cards
+    from public.organization_subscriptions as subscription
+    join public.organizations as organization
+      on organization.id = subscription.organization_id
+    join public.plans as plan
+      on plan.id = subscription.plan_id
+    where organization.status = 'active'
+      and subscription.status in ('trial', 'active', 'past_due')
+      and subscription.starts_at <= now()
+      and (subscription.expires_at is null or subscription.expires_at > now())
+      and plan.status = 'active'
+  ),
+  customer_rows as (
+    select
+      organization.id as organization_id,
+      organization.name as organization_name,
+      effective.subscription_id,
+      effective.plan_id,
+      effective.plan_name,
+      effective.subscription_status,
+      effective.contracted_cards,
+      card_usage.used_cards,
+      case
+        when effective.subscription_id is null then null::bigint
+        else greatest(effective.contracted_cards::bigint - card_usage.used_cards, 0::bigint)
+      end as available_cards,
+      case
+        when effective.subscription_id is null then null::bigint
+        else greatest(card_usage.used_cards - effective.contracted_cards::bigint, 0::bigint)
+      end as over_limit_by,
+      case
+        when effective.subscription_id is null then null::boolean
+        else card_usage.used_cards > effective.contracted_cards::bigint
+      end as is_over_limit
+    from public.organizations as organization
+    left join effective_subscription as effective
+      on effective.organization_id = organization.id
+    cross join lateral (
+      select count(*)::bigint as used_cards
+      from public.digital_cards as card
+      where card.organization_id = organization.id
+        and card.status in ('draft', 'published')
+    ) as card_usage
+    where normalized_search is null
+       or organization.name ilike '%' || normalized_search || '%'
+  )
+  select
+    customer.organization_id,
+    customer.organization_name,
+    customer.subscription_id,
+    customer.plan_id,
+    customer.plan_name,
+    customer.subscription_status,
+    customer.contracted_cards,
+    customer.used_cards,
+    customer.available_cards,
+    customer.over_limit_by,
+    customer.is_over_limit,
+    count(*) over()::bigint as total_count
+  from customer_rows as customer
+  order by lower(customer.organization_name), customer.organization_id
+  limit page_size
+  offset ((page - 1)::bigint * page_size::bigint);
+end;
+$function$;
+
+create or replace function public.get_platform_customer(
+  actor_user_id uuid,
+  target_organization_id uuid
+)
+returns table(
+  organization_id uuid,
+  organization_name text,
+  subscription_id uuid,
+  plan_id uuid,
+  plan_name text,
+  subscription_status text,
+  starts_at timestamp with time zone,
+  expires_at timestamp with time zone,
+  contracted_cards integer,
+  used_cards bigint,
+  available_cards bigint,
+  over_limit_by bigint,
+  is_over_limit boolean
+)
+language plpgsql
+stable
+security definer
+set search_path to 'pg_catalog'
+as $function$
+declare
+  effective_subscription_count integer;
+begin
+  if private.platform_admin_role(actor_user_id) is distinct from 'superadmin' then
+    raise exception using
+      errcode = '42501',
+      message = 'No tienes autorización de administración de plataforma.';
+  end if;
+
+  if target_organization_id is null then
+    raise exception using
+      errcode = '22023',
+      message = 'La organización es obligatoria.';
+  end if;
+
+  if not exists (
+    select 1
+    from public.organizations as organization
+    where organization.id = target_organization_id
+  ) then
+    raise exception using
+      errcode = 'P0002',
+      message = 'La organización no existe.';
+  end if;
+
+  select count(*)::integer
+  into effective_subscription_count
+  from public.organization_subscriptions as subscription
+  join public.organizations as organization
+    on organization.id = subscription.organization_id
+  join public.plans as plan
+    on plan.id = subscription.plan_id
+  where subscription.organization_id = target_organization_id
+    and organization.status = 'active'
+    and subscription.status in ('trial', 'active', 'past_due')
+    and subscription.starts_at <= now()
+    and (subscription.expires_at is null or subscription.expires_at > now())
+    and plan.status = 'active';
+
+  if effective_subscription_count > 1 then
+    raise exception using
+      errcode = 'P0001',
+      message = 'Se detectaron múltiples suscripciones efectivas para la organización.';
+  end if;
+
+  return query
+  with effective_subscription as (
+    select
+      subscription.organization_id,
+      subscription.id as subscription_id,
+      subscription.plan_id,
+      plan.name as plan_name,
+      subscription.status as subscription_status,
+      subscription.starts_at,
+      subscription.expires_at,
+      subscription.contracted_cards
+    from public.organization_subscriptions as subscription
+    join public.organizations as organization
+      on organization.id = subscription.organization_id
+    join public.plans as plan
+      on plan.id = subscription.plan_id
+    where subscription.organization_id = target_organization_id
+      and organization.status = 'active'
+      and subscription.status in ('trial', 'active', 'past_due')
+      and subscription.starts_at <= now()
+      and (subscription.expires_at is null or subscription.expires_at > now())
+      and plan.status = 'active'
+  )
+  select
+    organization.id,
+    organization.name,
+    effective.subscription_id,
+    effective.plan_id,
+    effective.plan_name,
+    effective.subscription_status,
+    effective.starts_at,
+    effective.expires_at,
+    effective.contracted_cards,
+    card_usage.used_cards,
+    case
+      when effective.subscription_id is null then null::bigint
+      else greatest(effective.contracted_cards::bigint - card_usage.used_cards, 0::bigint)
+    end,
+    case
+      when effective.subscription_id is null then null::bigint
+      else greatest(card_usage.used_cards - effective.contracted_cards::bigint, 0::bigint)
+    end,
+    case
+      when effective.subscription_id is null then null::boolean
+      else card_usage.used_cards > effective.contracted_cards::bigint
+    end
+  from public.organizations as organization
+  left join effective_subscription as effective
+    on effective.organization_id = organization.id
+  cross join lateral (
+    select count(*)::bigint as used_cards
+    from public.digital_cards as card
+    where card.organization_id = organization.id
+      and card.status in ('draft', 'published')
+  ) as card_usage
+  where organization.id = target_organization_id;
+end;
+$function$;
+
+create or replace function public.list_platform_card_limit_history(
+  actor_user_id uuid,
+  target_subscription_id uuid,
+  page integer,
+  page_size integer
+)
+returns table(
+  changed_at timestamp with time zone,
+  old_contracted_cards integer,
+  new_contracted_cards integer,
+  change_reason text,
+  changed_by uuid,
+  changed_by_display_name text,
+  total_count bigint
+)
+language plpgsql
+stable
+security definer
+set search_path to 'pg_catalog'
+as $function$
+begin
+  if private.platform_admin_role(actor_user_id) is distinct from 'superadmin' then
+    raise exception using
+      errcode = '42501',
+      message = 'No tienes autorización de administración de plataforma.';
+  end if;
+
+  if target_subscription_id is null then
+    raise exception using
+      errcode = '22023',
+      message = 'La suscripción es obligatoria.';
+  end if;
+
+  if page is null or page < 1 then
+    raise exception using
+      errcode = '22023',
+      message = 'La página debe ser mayor o igual a 1.';
+  end if;
+
+  if page_size is null or page_size < 1 or page_size > 100 then
+    raise exception using
+      errcode = '22023',
+      message = 'El tamaño de página debe estar entre 1 y 100.';
+  end if;
+
+  if not exists (
+    select 1
+    from public.organization_subscriptions as subscription
+    where subscription.id = target_subscription_id
+  ) then
+    raise exception using
+      errcode = 'P0002',
+      message = 'La suscripción no existe.';
+  end if;
+
+  return query
+  select
+    audit.changed_at,
+    audit.old_contracted_cards,
+    audit.new_contracted_cards,
+    audit.change_reason,
+    audit.changed_by,
+    administrator.display_name,
+    count(*) over()::bigint as total_count
+  from public.organization_subscription_card_limit_audit as audit
+  left join private.platform_admins as administrator
+    on administrator.user_id = audit.changed_by
+  where audit.subscription_id = target_subscription_id
+  order by audit.changed_at desc, audit.id desc
+  limit page_size
+  offset ((page - 1)::bigint * page_size::bigint);
+end;
+$function$;
+
 
 CREATE OR REPLACE FUNCTION public.create_organization_card(target_organization_id uuid, card_slug text, card_name text, card_position text DEFAULT NULL::text, card_company text DEFAULT NULL::text, card_slogan text DEFAULT NULL::text, card_description text DEFAULT NULL::text, card_phone text DEFAULT NULL::text, card_whatsapp text DEFAULT NULL::text, card_email text DEFAULT NULL::text, card_website text DEFAULT NULL::text, card_location text DEFAULT NULL::text, card_capture_enabled boolean DEFAULT false, card_secondary_phone text DEFAULT NULL::text)
  RETURNS digital_cards
@@ -5680,7 +6196,11 @@ revoke all on function public.update_organization_member(uuid, uuid, text, text)
 revoke all on function public.remove_organization_member(uuid, uuid) from public, anon, authenticated, service_role;
 revoke all on function public.get_organization_card_capacity(uuid) from public, anon, authenticated, service_role;
 revoke all on function public.set_subscription_contracted_cards(uuid, integer, text) from public, anon, authenticated, service_role;
+revoke all on function public.set_subscription_contracted_cards_by_admin(uuid, uuid, integer, integer, text) from public, anon, authenticated, service_role;
 revoke all on function public.bootstrap_platform_superadmin(uuid, text) from public, anon, authenticated, service_role;
+revoke all on function public.list_platform_customers(uuid, text, integer, integer) from public, anon, authenticated, service_role;
+revoke all on function public.get_platform_customer(uuid, uuid) from public, anon, authenticated, service_role;
+revoke all on function public.list_platform_card_limit_history(uuid, uuid, integer, integer) from public, anon, authenticated, service_role;
 revoke all on function public.get_organization_qr_capabilities(uuid) from public, anon, authenticated, service_role;
 revoke all on function public.set_card_media_reference(uuid, text, text) from public, anon, authenticated, service_role;
 revoke all on function public.set_card_qr_settings(uuid, text, text, boolean, numeric, text) from public, anon, authenticated, service_role;
@@ -5721,7 +6241,11 @@ grant execute on function public.create_organization_invitation(uuid, text, text
 grant execute on function public.resend_organization_invitation(uuid, bytea, timestamp with time zone, uuid) to service_role;
 grant execute on function public.revoke_organization_invitation(uuid, uuid) to service_role;
 grant execute on function public.set_subscription_contracted_cards(uuid, integer, text) to service_role;
+grant execute on function public.set_subscription_contracted_cards_by_admin(uuid, uuid, integer, integer, text) to service_role;
 grant execute on function public.bootstrap_platform_superadmin(uuid, text) to service_role;
+grant execute on function public.list_platform_customers(uuid, text, integer, integer) to service_role;
+grant execute on function public.get_platform_customer(uuid, uuid) to service_role;
+grant execute on function public.list_platform_card_limit_history(uuid, uuid, integer, integer) to service_role;
 
 -- Postflight estructural y de seguridad.
 DO $baseline_postflight$
@@ -5760,7 +6284,11 @@ BEGIN
     'public.list_organization_members(uuid)',
     'public.get_organization_card_capacity(uuid)',
     'public.set_subscription_contracted_cards(uuid,integer,text)',
+    'public.set_subscription_contracted_cards_by_admin(uuid,uuid,integer,integer,text)',
     'public.bootstrap_platform_superadmin(uuid,text)',
+    'public.list_platform_customers(uuid,text,integer,integer)',
+    'public.get_platform_customer(uuid,uuid)',
+    'public.list_platform_card_limit_history(uuid,uuid,integer,integer)',
     'public.set_card_media_reference(uuid,text,text)',
     'public.get_organization_qr_capabilities(uuid)',
     'public.set_card_qr_settings(uuid,text,text,boolean,numeric,text)',
@@ -5935,6 +6463,51 @@ BEGIN
      OR NOT has_function_privilege('service_role', 'public.set_subscription_contracted_cards(uuid,integer,text)', 'EXECUTE')
   THEN
     RAISE EXCEPTION 'Postflight: ACL del setter de tarjetas contratadas no coincide.';
+  END IF;
+
+  IF has_function_privilege('anon', 'public.set_subscription_contracted_cards_by_admin(uuid,uuid,integer,integer,text)', 'EXECUTE')
+     OR has_function_privilege('authenticated', 'public.set_subscription_contracted_cards_by_admin(uuid,uuid,integer,integer,text)', 'EXECUTE')
+     OR NOT has_function_privilege('service_role', 'public.set_subscription_contracted_cards_by_admin(uuid,uuid,integer,integer,text)', 'EXECUTE')
+     OR EXISTS (
+       SELECT 1
+       FROM pg_catalog.pg_proc AS procedure
+       CROSS JOIN LATERAL pg_catalog.aclexplode(
+         coalesce(procedure.proacl, pg_catalog.acldefault('f', procedure.proowner))
+       ) AS privilege
+       WHERE procedure.oid =
+         'public.set_subscription_contracted_cards_by_admin(uuid,uuid,integer,integer,text)'::regprocedure
+         AND privilege.grantee = 0
+         AND privilege.privilege_type = 'EXECUTE'
+     )
+  THEN
+    RAISE EXCEPTION 'Postflight: ACL del setter administrativo de tarjetas contratadas no coincide.';
+  END IF;
+
+  IF has_function_privilege('anon', 'public.list_platform_customers(uuid,text,integer,integer)', 'EXECUTE')
+     OR has_function_privilege('authenticated', 'public.list_platform_customers(uuid,text,integer,integer)', 'EXECUTE')
+     OR NOT has_function_privilege('service_role', 'public.list_platform_customers(uuid,text,integer,integer)', 'EXECUTE')
+     OR has_function_privilege('anon', 'public.get_platform_customer(uuid,uuid)', 'EXECUTE')
+     OR has_function_privilege('authenticated', 'public.get_platform_customer(uuid,uuid)', 'EXECUTE')
+     OR NOT has_function_privilege('service_role', 'public.get_platform_customer(uuid,uuid)', 'EXECUTE')
+     OR has_function_privilege('anon', 'public.list_platform_card_limit_history(uuid,uuid,integer,integer)', 'EXECUTE')
+     OR has_function_privilege('authenticated', 'public.list_platform_card_limit_history(uuid,uuid,integer,integer)', 'EXECUTE')
+     OR NOT has_function_privilege('service_role', 'public.list_platform_card_limit_history(uuid,uuid,integer,integer)', 'EXECUTE')
+     OR EXISTS (
+       SELECT 1
+       FROM pg_catalog.pg_proc AS procedure
+       CROSS JOIN LATERAL pg_catalog.aclexplode(
+         coalesce(procedure.proacl, pg_catalog.acldefault('f', procedure.proowner))
+       ) AS privilege
+       WHERE procedure.oid IN (
+         'public.list_platform_customers(uuid,text,integer,integer)'::regprocedure,
+         'public.get_platform_customer(uuid,uuid)'::regprocedure,
+         'public.list_platform_card_limit_history(uuid,uuid,integer,integer)'::regprocedure
+       )
+         AND privilege.grantee = 0
+         AND privilege.privilege_type = 'EXECUTE'
+     )
+  THEN
+    RAISE EXCEPTION 'Postflight: ACL de lectura administrativa de clientes no coincide.';
   END IF;
 END;
 $baseline_postflight$;

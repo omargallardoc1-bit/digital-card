@@ -9,3 +9,6 @@ verify_jwt = true
 
 [functions.organization-invitations]
 verify_jwt = true
+
+[functions.platform-admin]
+verify_jwt = true
