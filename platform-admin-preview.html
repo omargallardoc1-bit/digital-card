@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="es">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>MX Business Card · Preview</title></head>
+<body>
+<script>
+(async()=>{
+  const response=await fetch('/platform-admin.html',{cache:'no-store'});
+  if(!response.ok){document.body.textContent='No se pudo cargar el preview de administración.';return;}
+  let html=await response.text();
+  html=html.replace("db.functions.invoke('platform-admin',{body})","db.functions.invoke('platform-admin-preview',{body})");
+  document.open();
+  document.write(html);
+  document.close();
+})().catch(()=>{document.body.textContent='No se pudo cargar el preview de administración.'});
+</script>
+</body>
+</html>
