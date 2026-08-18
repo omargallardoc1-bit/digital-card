@@ -1,28 +1,23 @@
 {
-  "rewrites": [
+  "routes": [
     {
-      "source": "/platform-admin",
-      "destination": "/platform-admin.html"
+      "src": "^/$",
+      "dest": "/admin-shell.html"
     },
     {
-      "source": "/platform-admin/",
-      "destination": "/platform-admin.html"
+      "src": "^/platform-admin/?$",
+      "dest": "/platform-admin.html"
     },
     {
-      "source": "/",
-      "destination": "/admin-shell.html"
+      "src": "^/admin/?$",
+      "dest": "/admin-shell.html"
     },
     {
-      "source": "/admin",
-      "destination": "/admin-shell.html"
+      "handle": "filesystem"
     },
     {
-      "source": "/admin/",
-      "destination": "/admin-shell.html"
-    },
-    {
-      "source": "/((?!.*\\.).*)",
-      "destination": "/index.html"
+      "src": "/((?!.*\\.).*)",
+      "dest": "/index.html"
     }
   ]
 }
