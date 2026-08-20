@@ -3,6 +3,7 @@
     {"src":"^/$","dest":"/admin-shell.html"},
     {"src":"^/platform-admin/?$","dest":"/platform-admin-commercial.html"},
     {"src":"^/admin/?$","dest":"/admin-shell.html"},
+    {"src":"^/privacidad/?$","dest":"/privacidad.html"},
     {"handle":"filesystem"},
     {"src":"/((?!.*\\.).*)","dest":"/index.html"}
   ]
