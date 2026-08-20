@@ -1,11 +1,28 @@
--- Stripe automatic billing foundation.
+-- Stripe international billing foundation.
+-- Stripe is reserved for international subscriptions; domestic billing remains manual/SPEI.
 -- This migration adds durable provider identifiers and an idempotent webhook inbox.
 -- It does NOT enable charging or create Stripe resources.
 
 alter table public.organization_subscriptions
+  add column if not exists billing_market text not null default 'domestic',
   add column if not exists external_customer_id text,
   add column if not exists last_payment_status text,
   add column if not exists last_payment_at timestamptz;
+
+do $$
+begin
+  if exists (
+    select 1 from pg_constraint
+    where conrelid='public.organization_subscriptions'::regclass
+      and conname='organization_subscriptions_billing_market_check'
+  ) then
+    alter table public.organization_subscriptions drop constraint organization_subscriptions_billing_market_check;
+  end if;
+end $$;
+
+alter table public.organization_subscriptions
+  add constraint organization_subscriptions_billing_market_check
+  check (billing_market in ('domestic','international'));
 
 create unique index if not exists organization_subscriptions_provider_external_subscription_uq
   on public.organization_subscriptions (lower(payment_provider), external_subscription_id)
@@ -52,12 +69,25 @@ as $$
 declare
   existing_id uuid;
   new_id uuid;
+  target_subscription public.organization_subscriptions%rowtype;
 begin
   if provider_name <> 'stripe' then
     raise exception using errcode='22023',message='Proveedor de pago no soportado.';
   end if;
   if event_id is null or btrim(event_id)='' or event_type_name is null or btrim(event_type_name)='' or event_payload is null then
     raise exception using errcode='22023',message='El evento de pago no es válido.';
+  end if;
+
+  if subscription_id is not null and btrim(subscription_id)<>'' then
+    select * into target_subscription
+    from public.organization_subscriptions
+    where payment_provider='stripe'
+      and external_subscription_id=btrim(subscription_id)
+    limit 1;
+
+    if found and target_subscription.billing_market <> 'international' then
+      raise exception using errcode='22023',message='Stripe solo está habilitado para suscripciones internacionales.';
+    end if;
   end if;
 
   select id into existing_id
