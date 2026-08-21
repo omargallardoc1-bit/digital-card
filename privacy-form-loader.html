@@ -1,2 +1,19 @@
-<!-- Fragmento de integración: cargar antes de </body> en index.html. -->
-<script src="/privacy-form-link.js" defer></script>
+<!doctype html>
+<html lang="es">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>MX Business Card</title></head>
+<body>
+<script>
+(async()=>{
+  try{
+    const response=await fetch('/index.html',{cache:'no-store'});
+    if(!response.ok)throw new Error('No se pudo cargar la tarjeta.');
+    let html=await response.text();
+    html=html.replace('</body>','<script src="/privacy-form-link.js"><\/script></body>');
+    document.open();document.write(html);document.close();
+  }catch(error){
+    document.body.innerHTML='<main style="font:16px system-ui;padding:32px;text-align:center"><h1>MX Business Card</h1><p>No fue posible cargar esta tarjeta.</p></main>';
+  }
+})();
+</script>
+</body>
+</html>
