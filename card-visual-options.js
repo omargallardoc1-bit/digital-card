@@ -27,7 +27,25 @@
   function colorMarkup(){const t=themeFor(state?.card);const choices=Object.entries(PRESETS).map(([id,p])=>`<button type="button" class="palette-choice" data-preset="${id}" aria-pressed="${t.preset===id}"><span class="palette-swatches"><i style="background:${p.bg}"></i><i style="background:${p.btn}"></i></span><span>${p.name}</span></button>`).join('');return `<div class="color-theme-control" id="color-theme-control"><label>Colores de la tarjeta</label><div class="palette-grid">${choices}<button type="button" class="palette-choice" data-preset="custom" aria-pressed="${t.preset==='custom'}"><span class="palette-swatches"><i style="background:${t.bg}"></i><i style="background:${t.btn}"></i></span><span>Personalizado</span></button></div><div class="custom-colors ${t.preset==='custom'?'active':''}" id="custom-colors"><label>Fondo<input id="mx-bg-color" type="color" value="${t.bg}"></label><label>Botones<input id="mx-btn-color" type="color" value="${t.btn}"></label></div><small>El texto de los botones cambia automáticamente para mantener contraste.</small></div>`}
 
   function applyThemeToRenderedCard(card=state?.card){if(!card)return;const t=themeFor(card);document.querySelectorAll('.screen,.public-card .card-profile').forEach(el=>{el.style.setProperty('--mx-card-bg',t.bg);el.style.setProperty('--mx-button',t.btn);el.style.setProperty('--mx-button-text',t.text);el.style.background=t.bg});document.querySelectorAll('.screen .action,.public-card .action').forEach(el=>{el.style.setProperty('background',t.btn,'important');el.style.setProperty('border-color',t.btn,'important');el.style.setProperty('color',t.text,'important')});const row=document.querySelector('.public-language-row');if(row)row.style.background=t.bg}
-  async function persistTheme(preset,bg,btn){if(!state.card?.id)return;const text=autoText(btn);const {data,error}=await db.rpc('set_card_visual_theme',{target_card_id:state.card.id,requested_preset:preset,requested_background_color:bg,requested_button_color:btn,requested_button_text_color:text});if(error){toast?.('No se pudieron guardar los colores: '+error.message);return}const row=Array.isArray(data)?data[0]:data;if(row){state.card=row;state.cards=state.cards.map(c=>c.id===row.id?row:c)}toast?.('Colores guardados.');render?.();queueMicrotask(()=>applyThemeToRenderedCard(state.card))}
+
+  async function persistTheme(preset,bg,btn){
+    if(!state.card?.id)return;
+    const currentCard=state.card;
+    const currentListCard=state.cards?.find?.(c=>c.id===currentCard.id)||currentCard;
+    const text=autoText(btn);
+    const {data,error}=await db.rpc('set_card_visual_theme',{target_card_id:currentCard.id,requested_preset:preset,requested_background_color:bg,requested_button_color:btn,requested_button_text_color:text});
+    if(error){toast?.('No se pudieron guardar los colores: '+error.message);return}
+    const row=Array.isArray(data)?data[0]:data;
+    if(row){
+      const merged={...row,...currentListCard,...currentCard,theme:row.theme||currentCard.theme||currentListCard.theme};
+      state.card=merged;
+      if(Array.isArray(state.cards))state.cards=state.cards.map(c=>c.id===merged.id?{...c,...row,...merged}:c);
+    }
+    toast?.('Colores guardados.');
+    refreshPreview?.();
+    queueMicrotask(()=>applyThemeToRenderedCard(state.card));
+  }
+
   function setLocalTheme(preset,bg,btn){state.card.theme={...(state.card.theme||{}),color_preset:preset,background_color:bg,button_color:btn,button_text_color:autoText(btn)};refreshPreview?.();queueMicrotask(()=>applyThemeToRenderedCard(state.card))}
 
   function installControls(){if(typeof state==='undefined'||state.page!=='editor')return;const identity=document.querySelector('[data-editor-block="identity"] .editor-block-content');if(!identity)return;if(!document.getElementById('banner-height-control')){identity.insertAdjacentHTML('beforeend',heightMarkup());document.getElementById('card-banner-height')?.addEventListener('change',async e=>{const h=normalizeHeight(e.target.value);state.card.banner_height=h;refreshPreview?.();if(state.card.id){const {error}=await db.rpc('set_card_banner_height',{target_card_id:state.card.id,requested_height:h});if(error)toast?.('No se pudo guardar la altura: '+error.message);else toast?.('Altura del banner guardada.')}})}
