@@ -30,23 +30,21 @@
 
   async function persistTheme(preset,bg,btn){
     if(!state.card?.id)return;
-    const currentCard=state.card;
-    const currentListCard=state.cards?.find?.(c=>c.id===currentCard.id)||currentCard;
+    const cardId=state.card.id;
     const text=autoText(btn);
-    const {data,error}=await db.rpc('set_card_visual_theme',{target_card_id:currentCard.id,requested_preset:preset,requested_background_color:bg,requested_button_color:btn,requested_button_text_color:text});
+    const {data,error}=await db.rpc('set_card_visual_theme',{target_card_id:cardId,requested_preset:preset,requested_background_color:bg,requested_button_color:btn,requested_button_text_color:text});
     if(error){toast?.('No se pudieron guardar los colores: '+error.message);return}
     const row=Array.isArray(data)?data[0]:data;
-    if(row){
-      const merged={...row,...currentListCard,...currentCard,theme:row.theme||currentCard.theme||currentListCard.theme};
-      state.card=merged;
-      if(Array.isArray(state.cards))state.cards=state.cards.map(c=>c.id===merged.id?{...c,...row,...merged}:c);
-    }
+    const savedTheme=row?.theme||{...(state.card.theme||{}),color_preset:preset,background_color:bg,button_color:btn,button_text_color:text};
+    // Solo actualizamos el tema. No reemplazamos state.card ni state.cards,
+    // para conservar photo_url, cover_url, logo_url y URLs resueltas de medios.
+    state.card.theme=savedTheme;
+    if(Array.isArray(state.cards))state.cards=state.cards.map(c=>c.id===cardId?{...c,theme:savedTheme}:c);
     toast?.('Colores guardados.');
-    refreshPreview?.();
-    queueMicrotask(()=>applyThemeToRenderedCard(state.card));
+    applyThemeToRenderedCard(state.card);
   }
 
-  function setLocalTheme(preset,bg,btn){state.card.theme={...(state.card.theme||{}),color_preset:preset,background_color:bg,button_color:btn,button_text_color:autoText(btn)};refreshPreview?.();queueMicrotask(()=>applyThemeToRenderedCard(state.card))}
+  function setLocalTheme(preset,bg,btn){state.card.theme={...(state.card.theme||{}),color_preset:preset,background_color:bg,button_color:btn,button_text_color:autoText(btn)};applyThemeToRenderedCard(state.card)}
 
   function installControls(){if(typeof state==='undefined'||state.page!=='editor')return;const identity=document.querySelector('[data-editor-block="identity"] .editor-block-content');if(!identity)return;if(!document.getElementById('banner-height-control')){identity.insertAdjacentHTML('beforeend',heightMarkup());document.getElementById('card-banner-height')?.addEventListener('change',async e=>{const h=normalizeHeight(e.target.value);state.card.banner_height=h;refreshPreview?.();if(state.card.id){const {error}=await db.rpc('set_card_banner_height',{target_card_id:state.card.id,requested_height:h});if(error)toast?.('No se pudo guardar la altura: '+error.message);else toast?.('Altura del banner guardada.')}})}
     if(document.getElementById('color-theme-control'))return;identity.insertAdjacentHTML('beforeend',colorMarkup());
