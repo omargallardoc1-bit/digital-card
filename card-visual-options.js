@@ -1,72 +1,41 @@
-// MX Business Card — opciones visuales de banner, logo e idioma.
+// MX Business Card — opciones visuales de banner, logo, idioma y colores.
 (() => {
-  const HEIGHTS = new Set([245, 320, 740]);
-  const normalizeHeight = value => HEIGHTS.has(Number(value)) ? Number(value) : 320;
+  const HEIGHTS=new Set([245,320,740]);
+  const normalizeHeight=v=>HEIGHTS.has(Number(v))?Number(v):320;
+  const PRESETS={
+    classic_mx:{name:'Clásico MX',bg:'#FFFFFF',btn:'#16A34A'},blue_executive:{name:'Azul Ejecutivo',bg:'#F8FAFC',btn:'#1D4ED8'},black_premium:{name:'Negro Premium',bg:'#111827',btn:'#D4AF37'},wine_executive:{name:'Vino Ejecutivo',bg:'#FFF7F8',btn:'#881337'},purple_creative:{name:'Morado Creativo',bg:'#FAF5FF',btn:'#7E22CE'},turquoise_digital:{name:'Turquesa Digital',bg:'#F0FDFA',btn:'#0F766E'},orange_entrepreneur:{name:'Naranja Emprendedor',bg:'#FFF7ED',btn:'#EA580C'},red_impact:{name:'Rojo Impacto',bg:'#FFF5F5',btn:'#DC2626'},minimalist:{name:'Minimalista',bg:'#FFFFFF',btn:'#334155'}
+  };
+  const validHex=v=>/^#[0-9A-F]{6}$/i.test(String(v||''));
+  const autoText=hex=>{const n=parseInt(hex.slice(1),16),r=n>>16,g=(n>>8)&255,b=n&255;return (r*299+g*587+b*114)/1000>155?'#111827':'#FFFFFF'};
+  const themeFor=card=>{const t=card?.theme||{},p=PRESETS[t.color_preset]||PRESETS.classic_mx;return{preset:t.color_preset||'classic_mx',bg:validHex(t.background_color)?t.background_color:p.bg,btn:validHex(t.button_color)?t.button_color:p.btn,text:validHex(t.button_text_color)?t.button_text_color:autoText(validHex(t.button_color)?t.button_color:p.btn)}};
 
-  const css = document.createElement('style');
-  css.textContent = `
-    .banner-height-control{margin:0 0 16px;padding:14px;border:1px solid var(--border-default);border-radius:12px;background:var(--surface-muted)}
-    .banner-height-control label{display:block;margin-bottom:7px;font-size:13px;font-weight:800;color:var(--text-primary)}
-    .banner-height-control select{width:100%}
-    .banner-height-control small{display:block;margin-top:7px;color:var(--text-muted);font-size:12px;line-height:18px}
-    .card-socials .social-link[aria-label="Facebook"]{color:#1877F2}.card-socials .social-link[aria-label="Instagram"]{color:#E4405F}.card-socials .social-link[aria-label="LinkedIn"]{color:#0A66C2}.card-socials .social-link[aria-label="TikTok"]{color:#000}.card-socials .social-link[aria-label="YouTube"]{color:#FF0000}.card-socials .social-link[aria-label="X"]{color:#000}
-    .card-main-action.wa{border-color:#25D366;background:#25D366;color:#fff}.card-main-action.wa:hover,.card-main-action.wa:focus-visible{border-color:#128C7E;background:#128C7E;color:#fff}
-    .card-cover{transition:min-height .2s ease,height .2s ease}
-    .card-cover .hero-logo{right:20px!important;left:auto!important;top:20px!important;max-width:110px!important;max-height:58px!important}
-    .public-language-row{display:flex;justify-content:flex-end;align-items:center;padding:10px 16px;background:var(--card-brand-background,#fff)}
-    .public-language-row .language-picker{position:static!important;top:auto!important;right:auto!important;width:74px;min-height:44px;margin:0;box-shadow:var(--shadow-surface)}
-    body.mx-public-card>.language-picker{display:none!important}
-  `;
-  document.head.appendChild(css);
+  const css=document.createElement('style');css.textContent=`
+    .banner-height-control,.color-theme-control{margin:0 0 16px;padding:14px;border:1px solid var(--border-default);border-radius:12px;background:var(--surface-muted)}
+    .banner-height-control label,.color-theme-control>label{display:block;margin-bottom:7px;font-size:13px;font-weight:800;color:var(--text-primary)}
+    .banner-height-control select,.color-theme-control select{width:100%}.banner-height-control small,.color-theme-control small{display:block;margin-top:7px;color:var(--text-muted);font-size:12px;line-height:18px}
+    .palette-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:10px}.palette-choice{border:1px solid var(--border-default);border-radius:10px;padding:8px;background:var(--surface-default);cursor:pointer;text-align:left}.palette-choice[aria-pressed="true"]{outline:2px solid var(--focus-ring);outline-offset:1px}.palette-swatches{display:flex;height:22px;border-radius:6px;overflow:hidden;margin-bottom:5px}.palette-swatches i{flex:1}.palette-choice span{font-size:11px;font-weight:700;color:var(--text-primary)}
+    .custom-colors{display:none;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}.custom-colors.active{display:grid}.custom-colors label{font-size:12px;font-weight:700}.custom-colors input[type="color"]{width:100%;height:42px;border:1px solid var(--border-default);border-radius:8px;padding:3px;background:var(--surface-default)}
+    .card-cover{transition:min-height .2s ease,height .2s ease}.card-cover .hero-logo{right:20px!important;left:auto!important;top:20px!important;max-width:110px!important;max-height:58px!important}
+    .public-language-row{display:flex;justify-content:flex-end;align-items:center;padding:10px 16px;background:var(--card-brand-background,#fff)}.public-language-row .language-picker{position:static!important;top:auto!important;right:auto!important;width:74px;min-height:44px;margin:0;box-shadow:var(--shadow-surface)}body.mx-public-card>.language-picker{display:none!important}
+  `;document.head.appendChild(css);
 
-  function applyHeightToMarkup(markup, card) {
-    const height = normalizeHeight(card?.banner_height);
-    return String(markup).replace('class="hero card-cover" style="', `class="hero card-cover" data-banner-height="${height}" style="min-height:${height}px;height:${height}px;`);
-  }
-  if (typeof phonePreview === 'function') {
-    const originalPhonePreview = phonePreview;
-    phonePreview = function(card) { return applyHeightToMarkup(originalPhonePreview(card), card); };
-  }
+  function applyVisualMarkup(markup,card){const h=normalizeHeight(card?.banner_height),t=themeFor(card);return String(markup).replace('class="hero card-cover" style="',`class="hero card-cover" data-banner-height="${h}" style="min-height:${h}px;height:${h}px;`).replace('class="card-profile"',`class="card-profile" style="--mx-card-bg:${t.bg};--mx-button:${t.btn};--mx-button-text:${t.text};background:${t.bg}"`)}
+  if(typeof phonePreview==='function'){const original=phonePreview;phonePreview=function(card){return applyVisualMarkup(original(card),card)}}
 
-  function selectorMarkup() {
-    const value = normalizeHeight(state?.card?.banner_height);
-    const disabled = typeof canEditCurrentCardContent === 'function' && !canEditCurrentCardContent();
-    return `<div class="banner-height-control" id="banner-height-control"><label for="card-banner-height">Altura del banner</label><select id="card-banner-height" ${disabled?'disabled':''}><option value="245" ${value===245?'selected':''}>Compacto — 245 px</option><option value="320" ${value===320?'selected':''}>Medio — 320 px</option><option value="740" ${value===740?'selected':''}>Grande — 740 px</option></select><small>La foto de perfil conserva su posición. El cambio se aplica solamente a esta tarjeta.</small></div>`;
-  }
+  function heightMarkup(){const v=normalizeHeight(state?.card?.banner_height);return `<div class="banner-height-control" id="banner-height-control"><label for="card-banner-height">Altura del banner</label><select id="card-banner-height"><option value="245" ${v===245?'selected':''}>Compacto — 245 px</option><option value="320" ${v===320?'selected':''}>Medio — 320 px</option><option value="740" ${v===740?'selected':''}>Grande — 740 px</option></select><small>La foto de perfil conserva su posición.</small></div>`}
+  function colorMarkup(){const t=themeFor(state?.card);const choices=Object.entries(PRESETS).map(([id,p])=>`<button type="button" class="palette-choice" data-preset="${id}" aria-pressed="${t.preset===id}"><span class="palette-swatches"><i style="background:${p.bg}"></i><i style="background:${p.btn}"></i></span><span>${p.name}</span></button>`).join('');return `<div class="color-theme-control" id="color-theme-control"><label>Colores de la tarjeta</label><div class="palette-grid">${choices}<button type="button" class="palette-choice" data-preset="custom" aria-pressed="${t.preset==='custom'}"><span class="palette-swatches"><i style="background:${t.bg}"></i><i style="background:${t.btn}"></i></span><span>Personalizado</span></button></div><div class="custom-colors ${t.preset==='custom'?'active':''}" id="custom-colors"><label>Fondo<input id="mx-bg-color" type="color" value="${t.bg}"></label><label>Botones<input id="mx-btn-color" type="color" value="${t.btn}"></label></div><small>El texto de los botones cambia automáticamente para mantener contraste.</small></div>`}
 
-  async function changeBannerHeight(event){
-    const height=normalizeHeight(event.target.value);state.card.banner_height=height;if(typeof refreshPreview==='function')refreshPreview();if(!state.card.id)return;
-    event.target.disabled=true;const {data,error}=await db.rpc('set_card_banner_height',{target_card_id:state.card.id,requested_height:height});event.target.disabled=false;
-    if(error){if(typeof toast==='function')toast('No se pudo guardar la altura del banner: '+error.message);return}
-    const row=Array.isArray(data)?data[0]:data;if(row?.banner_height){state.card.banner_height=Number(row.banner_height);state.cards=state.cards.map(card=>card.id===state.card.id?{...card,banner_height:Number(row.banner_height)}:card)}
-    if(typeof toast==='function')toast('Altura del banner guardada.');
+  async function persistTheme(preset,bg,btn){if(!state.card?.id)return;const text=autoText(btn);const {data,error}=await db.rpc('set_card_visual_theme',{target_card_id:state.card.id,requested_preset:preset,requested_background_color:bg,requested_button_color:btn,requested_button_text_color:text});if(error){toast?.('No se pudieron guardar los colores: '+error.message);return}const row=Array.isArray(data)?data[0]:data;if(row){state.card=row;state.cards=state.cards.map(c=>c.id===row.id?row:c)}toast?.('Colores guardados.');render?.()}
+  function setLocalTheme(preset,bg,btn){state.card.theme={...(state.card.theme||{}),color_preset:preset,background_color:bg,button_color:btn,button_text_color:autoText(btn)};refreshPreview?.()}
+
+  function installControls(){if(typeof state==='undefined'||state.page!=='editor')return;const identity=document.querySelector('[data-editor-block="identity"] .editor-block-content');if(!identity)return;if(!document.getElementById('banner-height-control')){identity.insertAdjacentHTML('beforeend',heightMarkup());document.getElementById('card-banner-height')?.addEventListener('change',async e=>{const h=normalizeHeight(e.target.value);state.card.banner_height=h;refreshPreview?.();if(state.card.id){const {error}=await db.rpc('set_card_banner_height',{target_card_id:state.card.id,requested_height:h});if(error)toast?.('No se pudo guardar la altura: '+error.message);else toast?.('Altura del banner guardada.')}})}
+    if(document.getElementById('color-theme-control'))return;identity.insertAdjacentHTML('beforeend',colorMarkup());
+    document.querySelectorAll('.palette-choice').forEach(b=>b.addEventListener('click',()=>{const id=b.dataset.preset;if(id==='custom'){const t=themeFor(state.card);setLocalTheme('custom',t.bg,t.btn);document.getElementById('custom-colors')?.classList.add('active');document.querySelectorAll('.palette-choice').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));return}const p=PRESETS[id];setLocalTheme(id,p.bg,p.btn);persistTheme(id,p.bg,p.btn)}));
+    const bg=document.getElementById('mx-bg-color'),btn=document.getElementById('mx-btn-color');const custom=()=>{setLocalTheme('custom',bg.value.toUpperCase(),btn.value.toUpperCase())};bg?.addEventListener('input',custom);btn?.addEventListener('input',custom);bg?.addEventListener('change',()=>persistTheme('custom',bg.value.toUpperCase(),btn.value.toUpperCase()));btn?.addEventListener('change',()=>persistTheme('custom',bg.value.toUpperCase(),btn.value.toUpperCase()));
   }
 
-  function installSelector(){
-    if(typeof state==='undefined'||state.page!=='editor'||document.getElementById('banner-height-control'))return;
-    const identity=document.querySelector('[data-editor-block="identity"] .editor-block-content');
-    if(!identity)return;identity.insertAdjacentHTML('beforeend',selectorMarkup());document.getElementById('card-banner-height')?.addEventListener('change',changeBannerHeight);
-  }
+  function applyPublicTheme(){if(typeof isPublicRoute!=='function'||!isPublicRoute())return;document.body.classList.add('mx-public-card');const card=state?.card;if(!card)return;const t=themeFor(card),profile=document.querySelector('.public-card .card-profile');if(profile){profile.style.background=t.bg;profile.style.setProperty('--mx-card-bg',t.bg);profile.querySelectorAll('.card-main-action').forEach(el=>{el.style.background=t.btn;el.style.borderColor=t.btn;el.style.color=t.text})}const rowBg=document.querySelector('.public-language-row');if(rowBg)rowBg.style.background=t.bg}
+  function installLanguage(){if(typeof isPublicRoute!=='function'||!isPublicRoute())return;const profile=document.querySelector('.public-card .card-profile');if(!profile)return;let row=profile.querySelector('.public-language-row');if(!row){row=document.createElement('div');row.className='public-language-row';profile.querySelector('.card-cover')?.insertAdjacentElement('beforebegin',row)}const picker=[...document.body.querySelectorAll('.language-picker')].find(el=>!row.contains(el));if(picker)row.appendChild(picker)}
 
-  function installPublicLanguagePicker(){
-    if(typeof isPublicRoute!=='function'||!isPublicRoute())return;
-    document.body.classList.add('mx-public-card');
-    const profile=document.querySelector('.public-card .card-profile');if(!profile)return;
-    let row=profile.querySelector('.public-language-row');
-    if(!row){
-      row=document.createElement('div');
-      row.className='public-language-row';
-      const cover=profile.querySelector('.card-cover');
-      cover?.insertAdjacentElement('beforebegin',row);
-    }
-    const picker=[...document.body.querySelectorAll('.language-picker')].find(el=>!row.contains(el));
-    if(picker)row.appendChild(picker);
-  }
-
-  if(typeof saveCard==='function'){
-    const originalSaveCard=saveCard;saveCard=async function(...args){const requested=normalizeHeight(state?.card?.banner_height);const result=await originalSaveCard.apply(this,args);if(result&&state?.card?.id){state.card.banner_height=requested;const {data,error}=await db.rpc('set_card_banner_height',{target_card_id:state.card.id,requested_height:requested});if(!error){const row=Array.isArray(data)?data[0]:data;if(row?.banner_height)state.card.banner_height=Number(row.banner_height)}}return result};
-  }
-
-  let queued=false;const enhance=()=>{if(queued)return;queued=true;requestAnimationFrame(()=>{queued=false;installSelector();installPublicLanguagePicker()})};
-  const observer=new MutationObserver(enhance);observer.observe(document.documentElement,{childList:true,subtree:true});document.addEventListener('DOMContentLoaded',enhance);enhance();
+  let queued=false;const enhance=()=>{if(queued)return;queued=true;requestAnimationFrame(()=>{queued=false;installControls();installLanguage();applyPublicTheme()})};new MutationObserver(enhance).observe(document.documentElement,{childList:true,subtree:true});document.addEventListener('DOMContentLoaded',enhance);enhance();
 })();
