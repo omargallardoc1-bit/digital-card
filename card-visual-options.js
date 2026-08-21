@@ -13,7 +13,7 @@
     .card-main-action.wa{border-color:#25D366;background:#25D366;color:#fff}.card-main-action.wa:hover,.card-main-action.wa:focus-visible{border-color:#128C7E;background:#128C7E;color:#fff}
     .card-cover{transition:min-height .2s ease,height .2s ease}
     .card-cover .hero-logo{right:20px!important;left:auto!important;top:20px!important;max-width:110px!important;max-height:58px!important}
-    .public-language-row{display:flex;justify-content:flex-end;align-items:center;padding:10px 16px 0;background:var(--card-brand-background,#fff)}
+    .public-language-row{display:flex;justify-content:flex-end;align-items:center;padding:10px 16px;background:var(--card-brand-background,#fff)}
     .public-language-row .language-picker{position:static!important;top:auto!important;right:auto!important;width:74px;min-height:44px;margin:0;box-shadow:var(--shadow-surface)}
     body.mx-public-card>.language-picker{display:none!important}
   `;
@@ -53,8 +53,14 @@
     document.body.classList.add('mx-public-card');
     const profile=document.querySelector('.public-card .card-profile');if(!profile)return;
     let row=profile.querySelector('.public-language-row');
-    if(!row){row=document.createElement('div');row.className='public-language-row';const cover=profile.querySelector('.card-cover');cover?.insertAdjacentElement('afterend',row)}
-    const picker=[...document.body.querySelectorAll('.language-picker')].find(el=>!row.contains(el));if(picker)row.appendChild(picker);
+    if(!row){
+      row=document.createElement('div');
+      row.className='public-language-row';
+      const cover=profile.querySelector('.card-cover');
+      cover?.insertAdjacentElement('beforebegin',row);
+    }
+    const picker=[...document.body.querySelectorAll('.language-picker')].find(el=>!row.contains(el));
+    if(picker)row.appendChild(picker);
   }
 
   if(typeof saveCard==='function'){
