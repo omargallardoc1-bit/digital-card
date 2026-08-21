@@ -12,7 +12,7 @@
     .card-socials .social-link[aria-label="Facebook"]{color:#1877F2}.card-socials .social-link[aria-label="Instagram"]{color:#E4405F}.card-socials .social-link[aria-label="LinkedIn"]{color:#0A66C2}.card-socials .social-link[aria-label="TikTok"]{color:#000}.card-socials .social-link[aria-label="YouTube"]{color:#FF0000}.card-socials .social-link[aria-label="X"]{color:#000}
     .card-main-action.wa{border-color:#25D366;background:#25D366;color:#fff}.card-main-action.wa:hover,.card-main-action.wa:focus-visible{border-color:#128C7E;background:#128C7E;color:#fff}
     .card-cover{transition:min-height .2s ease,height .2s ease}
-    .card-cover .hero-logo{left:20px!important;right:auto!important;top:20px!important;max-width:110px!important;max-height:58px!important}
+    .card-cover .hero-logo{right:20px!important;left:auto!important;top:20px!important;max-width:110px!important;max-height:58px!important}
     .public-language-row{display:flex;justify-content:flex-end;align-items:center;padding:10px 16px 0;background:var(--card-brand-background,#fff)}
     .public-language-row .language-picker{position:static!important;top:auto!important;right:auto!important;width:74px;min-height:44px;margin:0;box-shadow:var(--shadow-surface)}
     body.mx-public-card>.language-picker{display:none!important}
@@ -44,7 +44,6 @@
 
   function installSelector(){
     if(typeof state==='undefined'||state.page!=='editor'||document.getElementById('banner-height-control'))return;
-    // Visible directamente en Identidad para que no dependa de abrir la sección Imágenes.
     const identity=document.querySelector('[data-editor-block="identity"] .editor-block-content');
     if(!identity)return;identity.insertAdjacentHTML('beforeend',selectorMarkup());document.getElementById('card-banner-height')?.addEventListener('change',changeBannerHeight);
   }
