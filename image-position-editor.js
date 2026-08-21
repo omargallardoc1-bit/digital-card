@@ -1,0 +1,59 @@
+(()=>{
+  const CSS=`
+  .mx-image-editor-backdrop{position:fixed;z-index:1000;inset:0;display:grid;place-items:center;padding:20px;background:rgba(11,18,32,.72);backdrop-filter:blur(4px)}
+  .mx-image-editor{width:min(620px,100%);max-height:calc(100vh - 32px);overflow:auto;border:1px solid #d0d5dd;border-radius:18px;background:#fff;box-shadow:0 24px 70px rgba(16,24,40,.28)}
+  .mx-image-editor header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:20px 20px 14px;border-bottom:1px solid #eaecf0}.mx-image-editor header h2{margin:0;font-size:20px;line-height:28px}.mx-image-editor header p{margin:4px 0 0;color:#667085;font-size:13px;line-height:19px}.mx-image-editor-close{width:44px;min-width:44px;padding:0;border:1px solid #d0d5dd;background:#fff;color:#344054;border-radius:10px;font-size:24px;line-height:1}
+  .mx-image-editor-body{padding:20px}.mx-image-stage-wrap{display:grid;place-items:center;padding:12px;border-radius:14px;background:#f2f4f7}.mx-image-stage{position:relative;width:min(100%,520px);overflow:hidden;touch-action:none;user-select:none;border-radius:12px;background:#101828;cursor:grab}.mx-image-stage.dragging{cursor:grabbing}.mx-image-stage.profile{aspect-ratio:1/1;max-width:390px;border-radius:50%}.mx-image-stage.logo{aspect-ratio:2/1;background-color:#f8fafc;background-image:linear-gradient(45deg,#e4e7ec 25%,transparent 25%),linear-gradient(-45deg,#e4e7ec 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#e4e7ec 75%),linear-gradient(-45deg,transparent 75%,#e4e7ec 75%);background-size:18px 18px;background-position:0 0,0 9px,9px -9px,-9px 0}.mx-image-stage.cover{aspect-ratio:16/9}.mx-image-stage img{position:absolute;left:50%;top:50%;max-width:none;max-height:none;transform-origin:center center;pointer-events:none;will-change:transform}.mx-image-safe{position:absolute;inset:10%;border:1px dashed rgba(255,255,255,.72);border-radius:8px;pointer-events:none}.mx-image-stage.profile .mx-image-safe{inset:8%;border-radius:50%}.mx-image-stage.logo .mx-image-safe{border-color:rgba(79,70,229,.55)}
+  .mx-image-editor-controls{display:grid;gap:14px;margin-top:18px}.mx-image-control-row{display:grid;grid-template-columns:90px minmax(0,1fr) 56px;gap:10px;align-items:center}.mx-image-control-row label{font-size:13px;font-weight:700;color:#344054}.mx-image-control-row input[type=range]{width:100%}.mx-image-zoom-value{color:#667085;font-size:12px;text-align:right}.mx-image-editor-hint{margin:0;color:#667085;font-size:12px;line-height:18px}.mx-image-editor-actions{display:flex;justify-content:flex-end;gap:10px;padding:14px 20px 20px}.mx-image-editor-actions button{min-height:44px;padding:10px 16px;border-radius:10px;font-weight:700}.mx-image-reset,.mx-image-cancel{border:1px solid #d0d5dd;background:#fff;color:#344054}.mx-image-apply{border:1px solid #4f46e5;background:#4f46e5;color:#fff}
+  @media(max-width:600px){.mx-image-editor-backdrop{padding:0;place-items:end center}.mx-image-editor{width:100%;max-height:92vh;border-radius:18px 18px 0 0}.mx-image-editor-body{padding:16px}.mx-image-editor header{padding:16px}.mx-image-editor-actions{padding:12px 16px calc(16px + env(safe-area-inset-bottom));display:grid;grid-template-columns:1fr 1fr}.mx-image-reset{grid-column:1/-1}.mx-image-control-row{grid-template-columns:72px minmax(0,1fr) 48px}}
+  `;
+  const style=document.createElement('style');style.id='mx-image-position-editor-style';style.textContent=CSS;document.head.appendChild(style);
+
+  const originalSelect=typeof selectCardImage==='function'?selectCardImage:null;
+  let active=null;
+
+  function labelFor(kind){return kind==='photo'?'Foto de perfil':kind==='logo'?'Logo / marca':'Banner / portada'}
+  function stageClass(kind){return kind==='photo'?'profile':kind==='logo'?'logo':'cover'}
+  function outputSize(kind){return kind==='photo'?{w:800,h:800}:kind==='logo'?{w:800,h:400}:{w:1600,h:900}}
+  function modeFor(kind){return kind==='logo'?'contain':'cover'}
+  function safeClose(){if(!active)return;active.bitmap?.close?.();active.fileInput&&(active.fileInput.value='');active.overlay?.remove();active=null}
+
+  async function openEditor(file,kind,fileInput){
+    let bitmap;try{bitmap=await createImageBitmap(file,{imageOrientation:'from-image'})}catch{throw new Error('El archivo no contiene una imagen válida.')}
+    if(bitmap.width*bitmap.height>MEDIA_MAX_SOURCE_PIXELS){bitmap.close();throw new Error('La imagen supera el límite de 40 megapíxeles.')}
+    const settings=mediaSettings[kind];
+    if(bitmap.width<settings.minWidth||bitmap.height<settings.minHeight){bitmap.close();throw new Error(`La imagen debe medir al menos ${settings.minWidth} × ${settings.minHeight}.`)}
+
+    const overlay=document.createElement('div');overlay.className='mx-image-editor-backdrop';overlay.innerHTML=`<section class="mx-image-editor" role="dialog" aria-modal="true" aria-labelledby="mx-image-editor-title"><header><div><h2 id="mx-image-editor-title">Acomodar ${labelFor(kind)}</h2><p>Arrastra la imagen y ajusta el zoom hasta que quede como deseas.</p></div><button type="button" class="mx-image-editor-close" aria-label="Cerrar">×</button></header><div class="mx-image-editor-body"><div class="mx-image-stage-wrap"><div class="mx-image-stage ${stageClass(kind)}"><img alt="Vista previa para recorte"><div class="mx-image-safe" aria-hidden="true"></div></div></div><div class="mx-image-editor-controls"><div class="mx-image-control-row"><label for="mx-image-zoom">Zoom</label><input id="mx-image-zoom" type="range" min="100" max="300" value="100" step="1"><span class="mx-image-zoom-value">100%</span></div><p class="mx-image-editor-hint">Puedes mover la imagen con el dedo o el mouse. La línea punteada marca la zona segura recomendada.</p></div></div><div class="mx-image-editor-actions"><button type="button" class="mx-image-reset">Restablecer</button><button type="button" class="mx-image-cancel">Cancelar</button><button type="button" class="mx-image-apply">Usar imagen</button></div></section>`;
+    document.body.appendChild(overlay);
+    const stage=overlay.querySelector('.mx-image-stage'),img=overlay.querySelector('img'),zoom=overlay.querySelector('#mx-image-zoom'),zoomValue=overlay.querySelector('.mx-image-zoom-value');
+    const url=URL.createObjectURL(file);img.src=url;
+    await new Promise((resolve,reject)=>{img.onload=resolve;img.onerror=reject});URL.revokeObjectURL(url);
+
+    active={overlay,bitmap,kind,fileInput,stage,img,zoom,zoomValue,x:0,y:0,scale:1,baseScale:1,pointerId:null,lastX:0,lastY:0};
+    fitBase();draw();
+
+    overlay.querySelector('.mx-image-editor-close').onclick=safeClose;overlay.querySelector('.mx-image-cancel').onclick=safeClose;
+    overlay.querySelector('.mx-image-reset').onclick=()=>{active.x=0;active.y=0;active.scale=1;zoom.value='100';fitBase();draw()};
+    zoom.oninput=()=>{if(!active)return;active.scale=Number(zoom.value)/100;zoomValue.textContent=`${zoom.value}%`;clampOffset();draw()};
+    stage.addEventListener('pointerdown',pointerDown);stage.addEventListener('pointermove',pointerMove);stage.addEventListener('pointerup',pointerUp);stage.addEventListener('pointercancel',pointerUp);
+    overlay.querySelector('.mx-image-apply').onclick=applyCrop;
+    overlay.addEventListener('keydown',e=>{if(e.key==='Escape')safeClose()});
+    overlay.querySelector('.mx-image-editor-close').focus();
+  }
+
+  function fitBase(){if(!active)return;const r=active.stage.getBoundingClientRect(),sw=active.bitmap.width,sh=active.bitmap.height;active.baseScale=modeFor(active.kind)==='contain'?Math.min(r.width/sw,r.height/sh):Math.max(r.width/sw,r.height/sh);clampOffset()}
+  function clampOffset(){if(!active)return;const r=active.stage.getBoundingClientRect(),displayW=active.bitmap.width*active.baseScale*active.scale,displayH=active.bitmap.height*active.baseScale*active.scale;if(modeFor(active.kind)==='contain'){const maxX=Math.max(0,(displayW-r.width)/2),maxY=Math.max(0,(displayH-r.height)/2);active.x=Math.max(-maxX,Math.min(maxX,active.x));active.y=Math.max(-maxY,Math.min(maxY,active.y));return}const maxX=Math.max(0,(displayW-r.width)/2),maxY=Math.max(0,(displayH-r.height)/2);active.x=Math.max(-maxX,Math.min(maxX,active.x));active.y=Math.max(-maxY,Math.min(maxY,active.y))}
+  function draw(){if(!active)return;const s=active.baseScale*active.scale;active.img.style.width=`${active.bitmap.width*s}px`;active.img.style.height=`${active.bitmap.height*s}px`;active.img.style.transform=`translate(calc(-50% + ${active.x}px),calc(-50% + ${active.y}px))`;active.zoomValue.textContent=`${Math.round(active.scale*100)}%`}
+  function pointerDown(e){if(!active)return;active.pointerId=e.pointerId;active.lastX=e.clientX;active.lastY=e.clientY;active.stage.setPointerCapture?.(e.pointerId);active.stage.classList.add('dragging')}
+  function pointerMove(e){if(!active||active.pointerId!==e.pointerId)return;active.x+=e.clientX-active.lastX;active.y+=e.clientY-active.lastY;active.lastX=e.clientX;active.lastY=e.clientY;clampOffset();draw()}
+  function pointerUp(e){if(!active||active.pointerId!==e.pointerId)return;active.pointerId=null;active.stage.classList.remove('dragging')}
+
+  async function canvasToSizedWebp(canvas){let quality=.9,blob=null,current=canvas;for(let attempt=0;attempt<10;attempt++){blob=await new Promise(resolve=>current.toBlob(resolve,'image/webp',quality));if(blob&&blob.size<=MEDIA_MAX_OUTPUT_BYTES)return {blob,width:current.width,height:current.height};if(quality>.62){quality-=.07;continue}const next=document.createElement('canvas');next.width=Math.max(1,Math.round(current.width*.88));next.height=Math.max(1,Math.round(current.height*.88));next.getContext('2d',{alpha:true}).drawImage(current,0,0,next.width,next.height);current=next}throw new Error('No fue posible reducir la imagen a 2 MB.')}
+
+  async function applyCrop(){if(!active)return;const snapshot=active,button=snapshot.overlay.querySelector('.mx-image-apply');button.disabled=true;button.textContent='Procesando…';try{const target=outputSize(snapshot.kind),canvas=document.createElement('canvas');canvas.width=target.w;canvas.height=target.h;const ctx=canvas.getContext('2d',{alpha:true});if(snapshot.kind!=='logo'){ctx.fillStyle='#ffffff';ctx.fillRect(0,0,target.w,target.h)}const stageRect=snapshot.stage.getBoundingClientRect(),stageW=stageRect.width,stageH=stageRect.height,stageScaleX=target.w/stageW,stageScaleY=target.h/stageH,displayW=snapshot.bitmap.width*snapshot.baseScale*snapshot.scale,displayH=snapshot.bitmap.height*snapshot.baseScale*snapshot.scale,dx=(stageW-displayW)/2+snapshot.x,dy=(stageH-displayH)/2+snapshot.y;ctx.drawImage(snapshot.bitmap,dx*stageScaleX,dy*stageScaleY,displayW*stageScaleX,displayH*stageScaleY);const processed=await canvasToSizedWebp(canvas);releasePendingMedia(snapshot.kind);state.pendingMedia[snapshot.kind]={blob:processed.blob,previewUrl:URL.createObjectURL(processed.blob),width:processed.width,height:processed.height};snapshot.bitmap.close?.();snapshot.overlay.remove();active=null;render();toast('Imagen acomodada. Pulsa Subir para guardarla.')}catch(error){console.error('No se pudo acomodar la imagen.',error);button.disabled=false;button.textContent='Usar imagen';toast(error?.message||'No se pudo procesar la imagen.')}}
+
+  selectCardImage=async function(event,kind){if(!canEditCurrentCardContent())return;const file=event.target.files?.[0],settings=mediaSettings[kind];if(!file||!settings)return;if(!MEDIA_INPUT_TYPES.has(file.type)){toast('Formato no permitido. Usa JPEG, PNG o WebP.');event.target.value='';return}if(file.size>MEDIA_MAX_INPUT_BYTES){toast('La imagen original supera 8 MB.');event.target.value='';return}try{await openEditor(file,kind,event.target)}catch(error){console.error('Imagen rechazada.',error);toast(error?.message||'No se pudo procesar la imagen.');event.target.value=''}};
+
+  window.addEventListener('resize',()=>{if(active){fitBase();draw()}});
+})();
