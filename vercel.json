@@ -2,6 +2,7 @@
   "routes": [
     {"src":"^/$","dest":"/admin-shell.html"},
     {"src":"^/platform-admin/?$","dest":"/platform-admin-commercial.html"},
+    {"src":"^/platform-audio/?$","dest":"/platform-audio-admin.html"},
     {"src":"^/alta-asistida/?$","dest":"/admin-assisted.html"},
     {"src":"^/admin/?$","dest":"/admin-shell.html"},
     {"src":"^/privacidad/?$","dest":"/privacidad.html"},
