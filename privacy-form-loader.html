@@ -10,7 +10,7 @@
     let html=await response.text();
     const dbNeedle='const db=supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY);';
     html=html.replace(dbNeedle,`${dbNeedle}\n  window.__mxDb=db;`);
-    html=html.replace('</body>','<script src="/privacy-form-link.js"><\/script><script src="/card-visual-options.js"><\/script><script src="/card-action-icons.js"><\/script><script src="/social-brand-colors.js"><\/script><script src="/public-share-menu.js"><\/script><script src="/public-action-grid.js"><\/script><script src="/public-card-audio.js?v=audio-1"><\/script></body>');
+    html=html.replace('</body>','<script src="/privacy-form-link.js"><\/script><script src="/card-visual-options.js"><\/script><script src="/card-action-icons.js"><\/script><script src="/social-brand-colors.js"><\/script><script src="/public-share-menu.js"><\/script><script src="/public-action-grid.js"><\/script><script src="/public-card-audio.js?v=audio-2"><\/script></body>');
     document.open();document.write(html);document.close();
   }catch(error){
     document.body.innerHTML='<main style="font:16px system-ui;padding:32px;text-align:center"><h1>MX Business Card</h1><p>No fue posible cargar esta tarjeta.</p></main>';
