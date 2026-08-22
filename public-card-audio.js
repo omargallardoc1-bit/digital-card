@@ -18,9 +18,19 @@
     if(error){console.warn('Public audio card query failed',error);return null}
     return data||null;
   }
+  function cardShell(){
+    return document.querySelector('.public-content')||document.querySelector('.public-card')||document.querySelector('.phone')||document.querySelector('.screen');
+  }
+  function actionColor(shell){
+    const candidate=shell?.querySelector('.action.wa,.action,.card-action,a[href*="wa.me"],a[href^="tel:"]');
+    if(candidate){const bg=getComputedStyle(candidate).backgroundColor;if(bg&&bg!=='rgba(0, 0, 0, 0)'&&bg!=='transparent')return bg}
+    const css=getComputedStyle(document.documentElement).getPropertyValue('--card-brand-primary').trim();
+    return css||'#4F46E5';
+  }
   function removeExisting(){document.getElementById('mx-public-audio-button')?.remove();if(audioEl){audioEl.pause();audioEl.src='';audioEl=null}}
   async function mount(){
     if(loading)return;
+    const shell=cardShell();if(!shell)return;
     loading=true;
     try{
       const c=await loadCard();
@@ -34,13 +44,15 @@
       audioEl=new Audio(data.signedUrl);
       audioEl.preload='metadata';
       audioEl.loop=!!c.audio_loop;
+      const style=getComputedStyle(shell);
+      if(style.position==='static')shell.style.position='relative';
       const button=document.createElement('button');
       button.id='mx-public-audio-button';
       button.type='button';
       button.setAttribute('aria-label','Reproducir audio');
       button.title='Reproducir audio';
       button.textContent='▶';
-      button.style.cssText='position:fixed;top:14px;left:14px;z-index:9999;width:42px;height:42px;border:1px solid var(--line,#e2e7f0);border-radius:10px;background:#fff;color:var(--text,#101828);box-shadow:0 3px 15px #1112;display:grid;place-items:center;font-size:18px;font-weight:800;cursor:pointer;padding:0';
+      button.style.cssText=`position:absolute;top:14px;left:14px;z-index:40;width:42px;height:42px;border:0;border-radius:10px;background:${actionColor(shell)};color:#fff;box-shadow:0 3px 12px rgba(16,24,40,.18);display:grid;place-items:center;font-size:17px;font-weight:800;cursor:pointer;padding:0;line-height:1`;
       button.onclick=async()=>{
         if(!audioEl)return;
         if(audioEl.paused){
@@ -49,7 +61,7 @@
       };
       audioEl.addEventListener('ended',()=>{if(!audioEl.loop){button.textContent='▶';button.setAttribute('aria-label','Reproducir audio');button.title='Reproducir audio'}});
       audioEl.addEventListener('pause',()=>{if(audioEl.currentTime<audioEl.duration){button.textContent='▶';button.setAttribute('aria-label','Reproducir audio');button.title='Reproducir audio'}});
-      document.body.appendChild(button);
+      shell.appendChild(button);
       mountedFor=key;
     }finally{loading=false}
   }
