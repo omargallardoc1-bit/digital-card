@@ -17,7 +17,7 @@
   html=html.replace(desktopNeedle,desktopReplacement);
 
   html=html.replace('function render(){','function render(){const platformUserId=state?.session?.user?.id||null;if(platformAdminCheckedUserId!==platformUserId){platformAdminAuthorized=false;queueMicrotask(()=>checkPlatformAdminAccess())}');
-  html=html.replace('</body>','<script src="/mixed-card-plans.js"><\/script><script src="/card-visual-options.js"><\/script><script src="/card-action-icons.js"><\/script><script src="/social-brand-colors.js"><\/script><script src="/image-position-editor.js"><\/script><script src="/card-audio-editor.js?v=audio-1"><\/script></body>');
+  html=html.replace('</body>','<script src="/mixed-card-plans.js"><\/script><script src="/card-visual-options.js"><\/script><script src="/card-action-icons.js"><\/script><script src="/social-brand-colors.js"><\/script><script src="/image-position-editor.js"><\/script><script src="/card-audio-editor.js?v=audio-1"><\/script><script src="/prospect-crm.js?v=crm-1"><\/script></body>');
 
   document.open();
   document.write(html);
