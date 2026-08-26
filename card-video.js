@@ -1,6 +1,6 @@
 (()=>{
   const BUCKET='digital-card-media',MAX_BYTES=35*1024*1024,MAX_SECONDS=30,ACCEPTED=new Set(['video/mp4','video/webm']);
-  let pending=null,busy=false,signedPath='',signedUrl='',lastKey='';
+  let pending=null,busy=false,signedPath='',signedUrl='',lastKey='',publicBusy=false,publicKey='';
   const db=()=>window.__mxDb||null,c=()=>typeof state!=='undefined'?state.card:null;
   const esc=v=>String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
   const notify=m=>typeof toast==='function'?toast(m):alert(m),enabled=card=>['pyme','empresarial'].includes(String(card?.package||'').toLowerCase()),editable=()=>enabled(c())&&typeof canEditCurrentCardContent==='function'&&canEditCurrentCardContent();
@@ -18,6 +18,34 @@
   async function upload(){const card=c(),d=db();if(!pending||!card?.id||!d||busy||!editable())return;busy=true;renderBlock();const old=card.video_url||null,path=`${card.owner_id||state.session?.user?.id}/${card.id}/video/${crypto.randomUUID()}.${pending.extension}`,{error:up}=await d.storage.from(BUCKET).upload(path,pending.blob,{contentType:pending.type,cacheControl:'3600',upsert:false});if(up){busy=false;renderBlock();return notify('No se pudo subir el video: '+up.message)}const {data,error}=await rpc(card,path,pending.duration,card.video_autoplay!==false,!!card.video_loop,placement(card));if(error){await d.storage.from(BUCKET).remove([path]);busy=false;renderBlock();return notify('No se pudo guardar el video: '+error.message)}Object.assign(card,Array.isArray(data)?data[0]:data);release();signedPath='';signedUrl='';if(old&&old!==path)await d.storage.from(BUCKET).remove([old]);busy=false;await signed(card);renderBlock();notify('Video actualizado correctamente.')}
   async function saveSettings(auto,loop,p,label){const card=c();if(!card?.id||!card.video_url||busy)return;busy=true;const {data,error}=await rpc(card,card.video_url,Number(card.video_duration_seconds),auto,loop,p);busy=false;if(error){renderBlock();return notify('No se pudo actualizar el video: '+error.message)}Object.assign(card,Array.isArray(data)?data[0]:data);renderBlock();notify(label+' actualizado correctamente.')}
   async function remove(){const card=c(),d=db();if(!card?.id||!card.video_url||busy||!confirm('¿Eliminar el video de esta tarjeta?'))return;busy=true;const old=card.video_url,{data,error}=await rpc(card,null,null,true,false,'section');if(error){busy=false;renderBlock();return notify(error.message)}Object.assign(card,Array.isArray(data)?data[0]:data);signedPath='';signedUrl='';await d.storage.from(BUCKET).remove([old]);busy=false;renderBlock();notify('Video eliminado correctamente.')}
-  async function injectPublic(){if(typeof state==='undefined'||!location.pathname.startsWith('/c/'))return;const card=state.publicCard;if(!enabled(card)||!card?.video_url)return;const d=db();if(!d)return;const {data,error}=await d.storage.from(BUCKET).createSignedUrl(card.video_url,900);if(error||!data?.signedUrl)return;document.querySelectorAll('[data-public-video]').forEach(el=>el.remove());if(placement(card)==='cover'){const cover=document.querySelector('.digital-card-surface .card-cover');if(!cover||cover.dataset.videoCover==='1')return;cover.dataset.videoCover='1';cover.style.backgroundImage='none';[...cover.children].forEach(child=>{if(!child.classList.contains('hero-logo'))child.remove()});cover.insertAdjacentHTML('afterbegin',videoTag(data.signedUrl,card,true));const logo=cover.querySelector('.hero-logo');if(logo)logo.style.zIndex='2';return}const main=document.querySelector('.digital-card-surface .card-content');if(!main)return;const section=document.createElement('section');section.className='card-section';section.dataset.publicVideo='1';section.innerHTML=`<h2 class="card-section-title">Video</h2>${videoTag(data.signedUrl,card)}`;const actions=main.querySelector('.card-main-actions');actions?actions.insertAdjacentElement('afterend',section):main.prepend(section)}
+  async function injectPublic(){
+    if(typeof state==='undefined'||!location.pathname.startsWith('/c/'))return;
+    const card=state.publicCard;if(!enabled(card)||!card?.video_url)return;
+    const key=`${card.id||''}|${card.video_url}|${placement(card)}|${!!card.video_autoplay}|${!!card.video_loop}`;
+    if(publicBusy)return;
+    const existing=document.querySelector('[data-public-video="1"]');
+    const coverExisting=document.querySelector('.digital-card-surface .card-cover[data-video-cover="1"] .mx-card-video');
+    if(publicKey===key&&(existing||coverExisting))return;
+    const d=db();if(!d)return;
+    publicBusy=true;
+    try{
+      const {data,error}=await d.storage.from(BUCKET).createSignedUrl(card.video_url,900);
+      if(error||!data?.signedUrl)return;
+      const oldSection=document.querySelector('[data-public-video="1"]');if(oldSection)oldSection.remove();
+      document.querySelectorAll('.digital-card-surface .card-cover[data-video-cover="1"]').forEach(el=>{delete el.dataset.videoCover});
+      if(placement(card)==='cover'){
+        const cover=document.querySelector('.digital-card-surface .card-cover');if(!cover)return;
+        cover.dataset.videoCover='1';cover.style.backgroundImage='none';
+        [...cover.children].forEach(child=>{if(!child.classList.contains('hero-logo'))child.remove()});
+        cover.insertAdjacentHTML('afterbegin',videoTag(data.signedUrl,card,true));
+        const logo=cover.querySelector('.hero-logo');if(logo)logo.style.zIndex='2';
+      }else{
+        const main=document.querySelector('.digital-card-surface .card-content');if(!main)return;
+        const section=document.createElement('section');section.className='card-section';section.dataset.publicVideo='1';section.innerHTML=`<h2 class="card-section-title">Video</h2>${videoTag(data.signedUrl,card)}`;
+        const actions=main.querySelector('.card-main-actions');actions?actions.insertAdjacentElement('afterend',section):main.prepend(section);
+      }
+      publicKey=key;
+    }finally{publicBusy=false}
+  }
   let scheduled=false;const observer=new MutationObserver(()=>{if(scheduled)return;scheduled=true;requestAnimationFrame(()=>{scheduled=false;void ensure();void injectPublic()})});observer.observe(document.documentElement,{childList:true,subtree:true});if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>{void ensure();void injectPublic()});else{void ensure();void injectPublic()}
 })();
