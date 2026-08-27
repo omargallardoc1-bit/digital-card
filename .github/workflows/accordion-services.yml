@@ -1,0 +1,46 @@
+name: Services accordion migration
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/accordion-services.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Convert services to accordion
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path('index.html')
+          text = path.read_text()
+
+          css_pattern = r'\.card-services-grid\{display:grid;grid-template-columns:repeat\(2,minmax\(0,1fr\)\);gap:var\(--space-3\)\}\.service-public-item\{padding:var\(--space-4\);border:1px solid var\(--border-default\);border-radius:var\(--radius-card\);background:var\(--surface-muted\);overflow-wrap:anywhere\}\.service-public-item:last-child\{border-bottom:1px solid var\(--border-default\)\}\.service-public-item strong\{display:block;color:var\(--text-primary\);font-size:14px\}\.service-public-item p\{margin:var\(--space-2\) 0 0;color:var\(--text-secondary\);font-size:13px;line-height:20px;white-space:pre-wrap\}'
+          css_replacement = '.card-services-grid{display:grid;gap:var(--space-2)}.service-public-item{overflow:hidden;padding:0;border:1px solid var(--border-default);border-radius:var(--radius-card);background:var(--surface-card)}.service-public-item:last-child{border-bottom:1px solid var(--border-default)}.service-toggle{width:100%;min-height:56px;display:flex;align-items:center;justify-content:space-between;gap:var(--space-3);padding:var(--space-4);border:0;border-radius:0;background:var(--surface-card);color:var(--text-primary);font-size:14px;font-weight:800;text-align:left}.service-toggle:hover,.service-toggle:focus-visible{background:var(--surface-muted)}.service-chevron{flex:0 0 22px;width:22px;height:22px;display:grid;place-items:center;color:var(--card-brand-primary);font-size:20px;line-height:1;transition:transform .18s ease}.service-toggle[aria-expanded="true"] .service-chevron{transform:rotate(180deg)}.service-description{padding:0 var(--space-4) var(--space-4);border-top:1px solid var(--border-default);background:var(--surface-muted)}.service-description[hidden]{display:none}.service-description p{margin:var(--space-3) 0 0;color:var(--text-secondary);font-size:13px;line-height:20px;white-space:pre-wrap}'
+          text, css_count = re.subn(css_pattern, css_replacement, text, count=1)
+          if css_count != 1:
+              raise SystemExit('Services CSS block not found')
+
+          old_fn = "  function servicesPreview(card){const services=Array.isArray(card?.services)?card.services.filter(service=>String(service.title||'').trim()):[];if(!services.length)return '';return `<section class=\"card-section\"><h2 class=\"card-section-title\">Servicios</h2><div class=\"card-services-grid\">${services.map(service=>`<article class=\"service-public-item\"><strong>${esc(String(service.title).trim())}</strong>${String(service.description||'').trim()?`<p>${esc(String(service.description).trim())}</p>`:''}</article>`).join('')}</div></section>`}"
+          new_fn = "  function servicesPreview(card){const services=Array.isArray(card?.services)?card.services.filter(service=>String(service.title||'').trim()):[];if(!services.length)return '';return `<section class=\"card-section\"><h2 class=\"card-section-title\">Servicios</h2><div class=\"card-services-grid\">${services.map((service,index)=>{const description=String(service.description||'').trim(),panelId=`service-panel-${index}`;return `<article class=\"service-public-item\"><button class=\"service-toggle\" type=\"button\" aria-expanded=\"false\" ${description?`aria-controls=\"${panelId}\" onclick=\"toggleServiceAccordion(this)\"`: 'disabled'}><span>${esc(String(service.title).trim())}</span>${description?'<span class=\"service-chevron\" aria-hidden=\"true\">⌄</span>':''}</button>${description?`<div class=\"service-description\" id=\"${panelId}\" hidden><p>${esc(description)}</p></div>`:''}</article>`}).join('')}</div></section>`}\n  function toggleServiceAccordion(button){const container=button.closest('.card-services-grid'),item=button.closest('.service-public-item'),panel=item?.querySelector('.service-description');if(!container||!item||!panel)return;const willOpen=button.getAttribute('aria-expanded')!=='true';container.querySelectorAll('.service-toggle[aria-expanded=\"true\"]').forEach(other=>{if(other===button)return;other.setAttribute('aria-expanded','false');const otherPanel=other.closest('.service-public-item')?.querySelector('.service-description');if(otherPanel)otherPanel.hidden=true});button.setAttribute('aria-expanded',String(willOpen));panel.hidden=!willOpen}"
+          if old_fn not in text:
+              raise SystemExit('servicesPreview function not found')
+          text = text.replace(old_fn, new_fn)
+
+          path.write_text(text)
+          PY
+      - name: Commit accordion
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html
+          git commit -m "Show services as collapsible accordion"
+          git push
