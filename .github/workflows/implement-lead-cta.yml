@@ -1,0 +1,59 @@
+name: One-time lead CTA migration
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/implement-lead-cta.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply lead CTA UX patch
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('index.html')
+          s = p.read_text()
+
+          old_help = "Mostrará un formulario opcional en la tarjeta pública."
+          new_help = "Mostrará un botón opcional para que el visitante comparta sus datos cuando lo decida."
+          if old_help in s:
+              s = s.replace(old_help, new_help)
+
+          old_tr = "'Mostrará un formulario opcional en la tarjeta pública.':'An optional form will appear on the public card.'"
+          new_tr = "'Mostrará un botón opcional para que el visitante comparta sus datos cuando lo decida.':'An optional button will let visitors share their details whenever they choose.'"
+          if old_tr in s:
+              s = s.replace(old_tr, new_tr)
+
+          old_fn = '''  function prospectForm(card){if(prospectAlreadySent(card.id))return `<div class=\"panel lead-panel success\" role=\"status\"><b>Datos enviados correctamente.</b><br>Gracias por compartir tu información.</div>`;return `<div class=\"panel lead-panel\" id=\"prospect-panel\"><h2>¿Quieres que te contactemos?</h2><p class=\"copy-muted\">Déjanos tus datos de forma opcional. La tarjeta y sus medios de contacto permanecen disponibles sin completar este formulario.</p><form onsubmit=\"submitProspect(event)\" aria-describedby=\"prospect-consent-help prospect-form-error\"><div class=\"field\"><label for=\"prospect-name\">Nombre</label><input id=\"prospect-name\" name=\"name\" maxlength=\"120\" autocomplete=\"name\" required></div><div class=\"field\"><label for=\"prospect-phone\">Teléfono</label><input id=\"prospect-phone\" name=\"phone\" type=\"tel\" maxlength=\"40\" autocomplete=\"tel\" required></div><div class=\"field\"><label for=\"prospect-email\">Correo (opcional)</label><input id=\"prospect-email\" name=\"email\" type=\"email\" maxlength=\"254\" autocomplete=\"email\"></div><div class=\"field check\"><label for=\"prospect-consent\"><input id=\"prospect-consent\" name=\"consentimiento\" type=\"checkbox\" required><span class=\"consent\" id=\"prospect-consent-help\">Acepto que mis datos sean utilizados para que el titular de esta Digital Card me contacte en relación con sus productos o servicios. Puedo decidir no enviar este formulario y seguir usando la tarjeta.</span></label></div><div class=\"error\" id=\"prospect-form-error\" data-prospect-error role=\"alert\" aria-live=\"polite\"></div><button class=\"primary\" type=\"submit\">Enviar mis datos</button></form></div>`}'''
+
+          new_fn = '''  function prospectForm(card){if(prospectAlreadySent(card.id))return `<div class=\"panel lead-panel success\" role=\"status\"><b>Datos enviados correctamente.</b><br>Gracias por compartir tu información.</div>`;return `<div class=\"panel lead-panel\" id=\"prospect-panel\"><h2>¿Quieres que te contactemos?</h2><p class=\"copy-muted\">Puedes compartir tus datos cuando tú decidas. La tarjeta y todos sus medios de contacto siguen disponibles sin registrarte.</p><button class=\"primary\" type=\"button\" onclick=\"showProspectForm()\">Compartir mis datos</button></div>`}
+  function showProspectForm(){const panel=document.getElementById('prospect-panel');if(!panel||!state.publicCard||prospectAlreadySent(state.publicCard.id))return;panel.innerHTML=`<h2>Comparte tus datos</h2><p class=\"copy-muted\">Déjalos solo si deseas que el titular de esta tarjeta te contacte.</p><form onsubmit=\"submitProspect(event)\" aria-describedby=\"prospect-consent-help prospect-form-error\"><div class=\"field\"><label for=\"prospect-name\">Nombre</label><input id=\"prospect-name\" name=\"name\" maxlength=\"120\" autocomplete=\"name\" required></div><div class=\"field\"><label for=\"prospect-phone\">Teléfono</label><input id=\"prospect-phone\" name=\"phone\" type=\"tel\" maxlength=\"40\" autocomplete=\"tel\" required></div><div class=\"field\"><label for=\"prospect-email\">Correo (opcional)</label><input id=\"prospect-email\" name=\"email\" type=\"email\" maxlength=\"254\" autocomplete=\"email\"></div><div class=\"field check\"><label for=\"prospect-consent\"><input id=\"prospect-consent\" name=\"consentimiento\" type=\"checkbox\" required><span class=\"consent\" id=\"prospect-consent-help\">Acepto que mis datos sean utilizados para que el titular de esta Digital Card me contacte en relación con sus productos o servicios. Puedo decidir no enviar este formulario y seguir usando la tarjeta.</span></label></div><div class=\"error\" id=\"prospect-form-error\" data-prospect-error role=\"alert\" aria-live=\"polite\"></div><button class=\"primary\" type=\"submit\">Enviar mis datos</button><button class=\"ghost\" type=\"button\" onclick=\"hideProspectForm()\">Ahora no</button></form>`;panel.querySelector('#prospect-name')?.focus()}
+  function hideProspectForm(){const panel=document.getElementById('prospect-panel');if(!panel||!state.publicCard)return;panel.outerHTML=prospectForm(state.publicCard)}'''
+
+          if old_fn not in s:
+              raise SystemExit('prospectForm function not found')
+          s = s.replace(old_fn, new_fn)
+
+          anchor = "'Datos enviados correctamente.':'Your information was sent successfully.'"
+          extras = "'Compartir mis datos':'Share my details','Comparte tus datos':'Share your details','Ahora no':'Not now','Puedes compartir tus datos cuando tú decidas. La tarjeta y todos sus medios de contacto siguen disponibles sin registrarte.':'You can share your details whenever you choose. The card and all its contact options remain available without registering.','Déjalos solo si deseas que el titular de esta tarjeta te contacte.':'Leave them only if you want the card owner to contact you.',"
+          if anchor in s and "'Compartir mis datos':'Share my details'" not in s:
+              s = s.replace(anchor, extras + anchor)
+
+          p.write_text(s)
+          PY
+
+      - name: Commit patched app
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/implement-lead-cta.yml
+          git add index.html
+          git commit -m "Show optional prospect form behind CTA"
+          git push
