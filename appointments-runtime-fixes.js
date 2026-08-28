@@ -44,11 +44,19 @@
     const values=new FormData(form),rawWhen=String(values.get('scheduled_at')||''),when=new Date(rawWhen);if(Number.isNaN(when.getTime())){errorEl.textContent=t('La fecha no es válida.','The date is invalid.');return;}
     const slots=Array.isArray(state?.appointmentPublicSlots)?state.appointmentPublicSlots:[],slot=slots.find(s=>String(s?.scheduled_at)===rawWhen);if(slots.length&&!slot){errorEl.textContent=t('Ese horario ya no está disponible. Actualiza la agenda.','That time is no longer available. Refresh the schedule.');return;}
     const duration=Number(slot?.duration_minutes||values.get('duration_minutes')||30);button.disabled=true;button.textContent=t('Enviando…','Sending…');errorEl.textContent='';
-    const prospect=await db.functions.invoke('create-prospect',{body:{card_id:card.id,name:String(values.get('name')||'').trim(),phone:String(values.get('phone')||'').trim(),email:String(values.get('email')||'').trim(),source:typeof publicEventSource==='function'?publicEventSource():'public_card',consentimiento:values.get('consentimiento')==='on'}});
-    if(prospect.error){errorEl.textContent=t('No se pudieron registrar tus datos. Inténtalo de nuevo.','Your information could not be saved. Please try again.');button.disabled=false;button.textContent=t('Solicitar cita','Request appointment');return;}
-    const prospectId=prospect.data?.prospect_id;if(!prospectId){errorEl.textContent=t('Tus datos se guardaron, pero no pudimos crear la cita.','Your information was saved, but the appointment could not be created.');button.disabled=false;button.textContent=t('Solicitar cita','Request appointment');return;}
-    const appointment=await db.functions.invoke('create-appointment',{body:{card_id:card.id,prospect_id:prospectId,scheduled_at:when.toISOString(),service_id:String(values.get('service_id')||'').trim()||null,duration_minutes:duration,notes:String(values.get('notes')||'').trim()||null}});
-    if(appointment.error){errorEl.textContent=appointment.data?.error||t('No se pudo crear la cita.','The appointment could not be created.');button.disabled=false;button.textContent=t('Solicitar cita','Request appointment');return;}
+    const appointment=await db.functions.invoke('create-appointment',{body:{
+      card_id:card.id,
+      name:String(values.get('name')||'').trim(),
+      phone:String(values.get('phone')||'').trim(),
+      email:String(values.get('email')||'').trim(),
+      source:typeof publicEventSource==='function'?publicEventSource():'public_card',
+      consentimiento:values.get('consentimiento')==='on',
+      scheduled_at:when.toISOString(),
+      service_id:String(values.get('service_id')||'').trim()||null,
+      duration_minutes:duration,
+      notes:String(values.get('notes')||'').trim()||null
+    }});
+    if(appointment.error){errorEl.textContent=appointment.data?.error||t('No se pudo crear la cita. No se guardaron tus datos.','The appointment could not be created. Your details were not saved.');button.disabled=false;button.textContent=t('Solicitar cita','Request appointment');return;}
     const panel=document.getElementById('appointment-public-panel');if(panel)panel.outerHTML=`<div class="panel success appointment-public-success"><b>${t('Solicitud de cita enviada.','Appointment request sent.')}</b><br>${t('La cita debe ser confirmada por llamada o WhatsApp por el titular de la tarjeta.','The appointment must be confirmed by the card owner by phone call or WhatsApp.')}</div>`;
   };
 
