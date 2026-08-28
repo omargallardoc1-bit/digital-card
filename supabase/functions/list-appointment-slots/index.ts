@@ -1,9 +1,62 @@
 import { createClient } from 'npm:@supabase/supabase-js@2.57.4'
 
-const EXACT_ORIGINS=new Set(['http://127.0.0.1:4173','http://localhost:4173','https://digital-card-mvp-three.vercel.app','https://mxbusinesscard.com'])
-const VERCEL_PREVIEW_HOST=/^digital-card(?:-[a-z0-9-]+)?-digital-01dd\.vercel\.app$/
-const UUID_PATTERN=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-function allowed(origin:string|null){if(!origin)return false;try{const u=new URL(origin);return u.origin===origin&&(EXACT_ORIGINS.has(u.origin)||(u.protocol==='https:'&&u.port===''&&VERCEL_PREVIEW_HOST.test(u.hostname.toLowerCase())))}catch{return false}}
-function headers(origin:string|null){return {'Access-Control-Allow-Origin':origin||'','Access-Control-Allow-Headers':'authorization, x-client-info, apikey, content-type','Access-Control-Allow-Methods':'POST, OPTIONS','Vary':'Origin'}}
-function json(origin:string|null,status:number,body:Record<string,unknown>){return new Response(JSON.stringify(body),{status,headers:{...headers(origin),'Content-Type':'application/json; charset=utf-8'}})}
-Deno.serve(async(req:Request)=>{const origin=req.headers.get('origin');if(!allowed(origin))return json(null,403,{error:'Origen no permitido.'});if(req.method==='OPTIONS')return new Response(null,{status:204,headers:headers(origin)});if(req.method!=='POST')return json(origin,405,{error:'Método no permitido.'});let body:any;try{body=await req.json()}catch{return json(origin,400,{error:'Solicitud no válida.'})}const cardId=typeof body?.card_id==='string'?body.card_id.trim():'';const days=Number(body?.days??14);if(!UUID_PATTERN.test(cardId)||!Number.isInteger(days)||days<1||days>31)return json(origin,400,{error:'Solicitud no válida.'});const url=Deno.env.get('SUPABASE_URL')||'',key=Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')||'';if(!url||!key)return json(origin,500,{error:'No fue posible consultar disponibilidad.'});const admin=createClient(url,key,{auth:{persistSession:false,autoRefreshToken:false}});const {data,error}=await admin.rpc('list_public_appointment_slots',{target_card_id:cardId,requested_days:days});if(error)return json(origin,400,{error:error.message});return json(origin,200,{slots:Array.isArray(data)?data:[]})})
+const EXACT_ORIGINS = new Set([
+  'http://127.0.0.1:4173',
+  'http://localhost:4173',
+  'https://digital-card-mvp-three.vercel.app',
+  'https://mxbusinesscard.com',
+])
+const VERCEL_PREVIEW_HOST = /^digital-card(?:-[a-z0-9-]+)?-digital-01dd\.vercel\.app$/
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+function allowed(origin: string | null) {
+  if (!origin) return false
+  try {
+    const u = new URL(origin)
+    return u.origin === origin && (EXACT_ORIGINS.has(u.origin) || (u.protocol === 'https:' && u.port === '' && VERCEL_PREVIEW_HOST.test(u.hostname.toLowerCase())))
+  } catch { return false }
+}
+function headers(origin: string | null) {
+  return {
+    'Access-Control-Allow-Origin': origin || '',
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Vary': 'Origin',
+  }
+}
+function json(origin: string | null, status: number, body: Record<string, unknown>) {
+  return new Response(JSON.stringify(body), { status, headers: { ...headers(origin), 'Content-Type': 'application/json; charset=utf-8' } })
+}
+
+Deno.serve(async (req: Request) => {
+  const origin = req.headers.get('origin')
+  if (!allowed(origin)) return json(null, 403, { error: 'Origen no permitido.' })
+  if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: headers(origin) })
+  if (req.method !== 'POST') return json(origin, 405, { error: 'Método no permitido.' })
+
+  let body: any
+  try { body = await req.json() } catch { return json(origin, 400, { error: 'Solicitud no válida.' }) }
+  const cardId = typeof body?.card_id === 'string' ? body.card_id.trim() : ''
+  const days = Number(body?.days ?? 14)
+  if (!UUID_PATTERN.test(cardId) || !Number.isInteger(days) || days < 1 || days > 31) return json(origin, 400, { error: 'Solicitud no válida.' })
+
+  const url = Deno.env.get('SUPABASE_URL') || ''
+  const key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
+  if (!url || !key) return json(origin, 500, { error: 'No fue posible consultar disponibilidad.' })
+
+  const admin = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } })
+  const { data, error } = await admin.rpc('list_public_appointment_slots', { target_card_id: cardId, requested_days: days })
+  if (error) return json(origin, 400, { error: error.message })
+  const slots = Array.isArray(data) ? data : []
+
+  const { data: settings } = await admin
+    .from('appointment_settings')
+    .select('timezone,default_duration_minutes,enabled')
+    .eq('card_id', cardId)
+    .maybeSingle()
+
+  const timezone = settings?.enabled ? (settings.timezone || 'UTC') : 'UTC'
+  const durationMinutes = Number(settings?.default_duration_minutes || slots[0]?.duration_minutes || 30)
+
+  return json(origin, 200, { ok: true, slots, timezone, duration_minutes: durationMinutes })
+})
