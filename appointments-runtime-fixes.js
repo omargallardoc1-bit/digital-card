@@ -4,6 +4,14 @@
   const lang=()=>typeof language!=='undefined'?language:'es';
   const t=(es,en)=>lang()==='en'?en:es;
 
+  // Load configuration/availability layer without modifying the large core HTML.
+  if(!document.querySelector('script[src="/appointments-config.js"]')){
+    const script=document.createElement('script');
+    script.src='/appointments-config.js';
+    script.defer=true;
+    document.body.appendChild(script);
+  }
+
   // Public booking must go through the Edge Function; the SECURITY DEFINER RPC
   // is intentionally service_role-only in production.
   window.submitAppointment=async function(event){
@@ -15,12 +23,21 @@
     if(!card||!errorEl||!button)return;
 
     const values=new FormData(form);
-    const when=new Date(String(values.get('scheduled_at')||''));
+    const rawWhen=String(values.get('scheduled_at')||'');
+    const when=new Date(rawWhen);
     if(Number.isNaN(when.getTime())){
       errorEl.textContent=t('La fecha no es válida.','The date is invalid.');
       return;
     }
 
+    const allowedSlots=Array.isArray(state?.appointmentPublicSlots)?state.appointmentPublicSlots:[];
+    const selectedSlot=allowedSlots.find(slot=>String(slot?.scheduled_at)===rawWhen);
+    if(allowedSlots.length&&!selectedSlot){
+      errorEl.textContent=t('Ese horario ya no está disponible. Actualiza la agenda.','That time is no longer available. Refresh the schedule.');
+      return;
+    }
+
+    const duration=Number(values.get('duration_minutes')||selectedSlot?.duration_minutes||30);
     button.disabled=true;
     button.textContent=t('Enviando…','Sending…');
     errorEl.textContent='';
@@ -55,7 +72,7 @@
       prospect_id:prospectId,
       scheduled_at:when.toISOString(),
       service_id:String(values.get('service_id')||'').trim()||null,
-      duration_minutes:30,
+      duration_minutes:duration,
       notes:String(values.get('notes')||'').trim()||null
     }});
 
