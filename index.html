@@ -508,5 +508,7 @@
   db.auth.onAuthStateChange((event,session)=>{if(isPublicRoute())return;state.session=session;if(event==='PASSWORD_RECOVERY'){passwordRecoveryActive=true;cleanAuthCallbackUrl();render();return}if(passwordRecoveryActive)return;if(session)loadCards();else render()});
   (async()=>{if(!isPublicRoute())inviteTokenFromUrl();if(isPublicRoute()){renderPublic();return}const {data:{session}}=await db.auth.getSession();state.session=session;if(passwordRecoveryActive){render();return}if(session)await loadCards();else render()})();
   </script>
+  <script src="/appointments-ui.js"></script>
+  <script src="/appointments-runtime-fixes.js"></script>
 </body>
 </html>
