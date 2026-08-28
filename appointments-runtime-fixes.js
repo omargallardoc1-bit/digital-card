@@ -5,9 +5,6 @@
   const loadScript=src=>{if(document.querySelector(`script[src="${src}"]`))return;const s=document.createElement('script');s.src=src;s.defer=true;document.body.appendChild(s)};
   loadScript('/appointments-config.js');
   loadScript('/appointments-blocks.js');
-  loadScript('/crm-commercial.js');
-  loadScript('/crm-priority.js');
-  loadScript('/crm-history.js');
 
   const manager=()=>['owner','admin'].includes(String(state?.organizationMembership?.role||'').toLowerCase());
   const installRoleFix=()=>{
