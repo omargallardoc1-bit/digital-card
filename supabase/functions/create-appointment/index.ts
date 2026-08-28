@@ -11,7 +11,7 @@ const VERCEL_PREVIEW_HOST = /^digital-card(?:-[a-z0-9-]+)?-digital-01dd\.vercel\
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const ALLOWED_SOURCES = new Set(['public_card','qr'])
-const ALLOWED_KEYS = new Set(['card_id','name','phone','email','source','consentimiento','scheduled_at','service_id','duration_minutes','notes'])
+const ALLOWED_KEYS = new Set(['card_id','prospect_id','name','phone','email','source','consentimiento','scheduled_at','service_id','duration_minutes','notes'])
 
 function isAllowedOrigin(origin: string | null) {
   if (!origin) return false
@@ -58,24 +58,15 @@ Deno.serve(async (req: Request) => {
 
   const keys = Object.keys(body)
   if (keys.some((key) => !ALLOWED_KEYS.has(key))) return json(origin, 400, { error: 'La solicitud contiene campos no permitidos.' })
-  if (!['card_id','name','phone','source','consentimiento','scheduled_at'].every((key) => keys.includes(key))) return json(origin, 400, { error: 'Faltan campos obligatorios.' })
 
   const cardId = typeof body.card_id === 'string' ? body.card_id.trim() : ''
-  const name = typeof body.name === 'string' ? body.name.trim() : ''
-  const phone = typeof body.phone === 'string' ? body.phone.trim() : ''
-  const email = typeof body.email === 'string' ? body.email.trim() : ''
-  const source = typeof body.source === 'string' ? body.source.trim().toLowerCase() : ''
+  const prospectId = typeof body.prospect_id === 'string' ? body.prospect_id.trim() : ''
   const serviceId = typeof body.service_id === 'string' ? body.service_id.trim() : ''
   const scheduledAt = typeof body.scheduled_at === 'string' ? body.scheduled_at.trim() : ''
   const durationMinutes = Number(body.duration_minutes ?? 30)
   const notes = typeof body.notes === 'string' ? body.notes.trim() : ''
 
   if (!UUID_PATTERN.test(cardId)) return json(origin, 400, { error: 'Datos no válidos.' })
-  if (!name || name.length > 120) return json(origin, 400, { error: 'El nombre es obligatorio y debe tener máximo 120 caracteres.' })
-  if (!phone || phone.length > 40) return json(origin, 400, { error: 'El teléfono es obligatorio y debe tener máximo 40 caracteres.' })
-  if (email.length > 254 || (email && !EMAIL_PATTERN.test(email))) return json(origin, 400, { error: 'El correo no es válido.' })
-  if (!ALLOWED_SOURCES.has(source)) return json(origin, 400, { error: 'La fuente no es válida.' })
-  if (body.consentimiento !== true) return json(origin, 400, { error: 'Debes aceptar el aviso de consentimiento.' })
   if (serviceId && !UUID_PATTERN.test(serviceId)) return json(origin, 400, { error: 'Servicio no válido.' })
   const date = new Date(scheduledAt)
   if (!scheduledAt || Number.isNaN(date.getTime())) return json(origin, 400, { error: 'La fecha de la cita no es válida.' })
@@ -86,6 +77,37 @@ Deno.serve(async (req: Request) => {
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
   if (!supabaseUrl || !serviceRoleKey) return json(origin, 500, { error: 'No fue posible procesar la solicitud.' })
   const admin = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } })
+
+  if (prospectId) {
+    if (!UUID_PATTERN.test(prospectId)) return json(origin, 400, { error: 'Datos no válidos.' })
+    const { data: appointmentId, error } = await admin.rpc('create_public_appointment', {
+      target_card_id: cardId,
+      target_prospect_id: prospectId,
+      requested_at: date.toISOString(),
+      target_service_id: serviceId || null,
+      requested_duration_minutes: durationMinutes,
+      appointment_notes: notes || null,
+    })
+    if (error || !appointmentId) {
+      const message = String(error?.message || '')
+      if (/horario ya no está disponible/i.test(message)) return json(origin, 409, { error: 'Ese horario ya no está disponible.' })
+      if (/tarjeta no está disponible|agenda no está disponible/i.test(message)) return json(origin, 409, { error: 'La agenda no está disponible.' })
+      if (/prospecto no corresponde|servicio no corresponde|fecha|duración/i.test(message)) return json(origin, 400, { error: message })
+      return json(origin, 500, { error: 'No fue posible crear la cita.' })
+    }
+    return json(origin, 201, { ok: true, prospect_id: prospectId, appointment_id: appointmentId, compatibility_mode: 'legacy' })
+  }
+
+  if (!['name','phone','source','consentimiento'].every((key) => keys.includes(key))) return json(origin, 400, { error: 'Faltan campos obligatorios.' })
+  const name = typeof body.name === 'string' ? body.name.trim() : ''
+  const phone = typeof body.phone === 'string' ? body.phone.trim() : ''
+  const email = typeof body.email === 'string' ? body.email.trim() : ''
+  const source = typeof body.source === 'string' ? body.source.trim().toLowerCase() : ''
+  if (!name || name.length > 120) return json(origin, 400, { error: 'El nombre es obligatorio y debe tener máximo 120 caracteres.' })
+  if (!phone || phone.length > 40) return json(origin, 400, { error: 'El teléfono es obligatorio y debe tener máximo 40 caracteres.' })
+  if (email.length > 254 || (email && !EMAIL_PATTERN.test(email))) return json(origin, 400, { error: 'El correo no es válido.' })
+  if (!ALLOWED_SOURCES.has(source)) return json(origin, 400, { error: 'La fuente no es válida.' })
+  if (body.consentimiento !== true) return json(origin, 400, { error: 'Debes aceptar el aviso de consentimiento.' })
 
   const { data, error } = await admin.rpc('create_public_prospect_appointment', {
     target_card_id: cardId,
@@ -99,7 +121,6 @@ Deno.serve(async (req: Request) => {
     requested_duration_minutes: durationMinutes,
     appointment_notes: notes || null,
   })
-
   if (error || !data?.prospect_id || !data?.appointment_id) {
     const message = String(error?.message || '')
     if (/horario ya no está disponible/i.test(message)) return json(origin, 409, { error: 'Ese horario ya no está disponible.' })
@@ -107,6 +128,5 @@ Deno.serve(async (req: Request) => {
     if (/nombre|teléfono|correo|consentimiento|servicio|fecha|duración|fuente/i.test(message)) return json(origin, 400, { error: message })
     return json(origin, 500, { error: 'No fue posible crear la cita.' })
   }
-
-  return json(origin, 201, { ok: true, prospect_id: data.prospect_id, appointment_id: data.appointment_id })
+  return json(origin, 201, { ok: true, prospect_id: data.prospect_id, appointment_id: data.appointment_id, compatibility_mode: 'atomic' })
 })
