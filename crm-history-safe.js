@@ -38,6 +38,7 @@
       let html=originalView();
       const id=state.crmSelectedProspectId;
       if(!id)return html;
+      html=html.replace(/(<div class="crm-safe-editor-actions">[\s\S]*?)<button class="crm-safe-action" type="button" onclick="openCrmSafeProspect\('[^']+'\)">[^<]*<\/button>/,'$1');
       const marker='</form></section></div>';
       if(html.includes(marker))html=html.replace(marker,`</form>${historyHtml(id)}</section></div>`);
       return html;
