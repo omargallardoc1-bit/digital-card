@@ -8,6 +8,7 @@
   loadScript('/crm-commercial-safe.js');
   loadScript('/crm-history-safe.js');
   loadScript('/crm-appointments-safe.js');
+  loadScript('/mx-brand-safe.js');
 
   const manager=()=>['owner','admin'].includes(String(state?.organizationMembership?.role||'').toLowerCase());
   const installRoleFix=()=>{
