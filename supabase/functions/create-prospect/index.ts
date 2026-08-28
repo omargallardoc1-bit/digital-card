@@ -55,11 +55,7 @@ Deno.serve(async (req: Request) => {
   if (declaredLength > MAX_BODY_BYTES) return json(origin, 413, { error: 'Solicitud demasiado grande.' })
 
   let raw = ''
-  try {
-    raw = await req.text()
-  } catch {
-    return json(origin, 400, { error: 'Solicitud no válida.' })
-  }
+  try { raw = await req.text() } catch { return json(origin, 400, { error: 'Solicitud no válida.' }) }
   if (new TextEncoder().encode(raw).byteLength > MAX_BODY_BYTES) return json(origin, 413, { error: 'Solicitud demasiado grande.' })
 
   let body: Record<string, unknown>
@@ -67,15 +63,11 @@ Deno.serve(async (req: Request) => {
     const parsed = JSON.parse(raw)
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('invalid body')
     body = parsed as Record<string, unknown>
-  } catch {
-    return json(origin, 400, { error: 'Solicitud no válida.' })
-  }
+  } catch { return json(origin, 400, { error: 'Solicitud no válida.' }) }
 
   const keys = Object.keys(body)
   if (keys.some((key) => !ALLOWED_KEYS.has(key))) return json(origin, 400, { error: 'La solicitud contiene campos no permitidos.' })
-  if (!['card_id', 'name', 'phone', 'source', 'consentimiento'].every((key) => keys.includes(key))) {
-    return json(origin, 400, { error: 'Faltan campos obligatorios.' })
-  }
+  if (!['card_id', 'name', 'phone', 'source', 'consentimiento'].every((key) => keys.includes(key))) return json(origin, 400, { error: 'Faltan campos obligatorios.' })
 
   const cardId = typeof body.card_id === 'string' ? body.card_id.trim() : ''
   const name = typeof body.name === 'string' ? body.name.trim() : ''
@@ -95,7 +87,7 @@ Deno.serve(async (req: Request) => {
   if (!supabaseUrl || !serviceRoleKey) return json(origin, 500, { error: 'No fue posible procesar la solicitud.' })
   const admin = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } })
 
-  const { error: createError } = await admin.rpc('create_public_prospect', {
+  const { data: prospectId, error: createError } = await admin.rpc('create_public_prospect', {
     target_card_id: cardId,
     prospect_name: name,
     prospect_phone: phone,
@@ -103,7 +95,7 @@ Deno.serve(async (req: Request) => {
     prospect_source: source,
     consent_given: true,
   })
-  if (createError) return json(origin, 500, { error: 'No fue posible guardar tus datos.' })
+  if (createError || typeof prospectId !== 'string' || !UUID_PATTERN.test(prospectId)) return json(origin, 500, { error: 'No fue posible guardar tus datos.' })
 
-  return json(origin, 201, { ok: true })
+  return json(origin, 201, { ok: true, prospect_id: prospectId })
 })
