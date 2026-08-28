@@ -20,7 +20,7 @@
     .social-link[aria-label="Pinterest"]:hover,.social-link[aria-label="Pinterest"]:focus-visible{background:#FFF0F2!important;color:#E60023!important}
     .social-link[aria-label="Telegram"]:hover,.social-link[aria-label="Telegram"]:focus-visible{background:#EDF8FD!important;color:#26A5E4!important}
     .social-link[aria-label="Snapchat"]:hover,.social-link[aria-label="Snapchat"]:focus-visible{background:#111!important;color:#FFFC00!important}
-    .social-link svg{fill:currentColor;stroke:currentColor}
+    .social-link svg{stroke:currentColor}
   `;
   document.head.appendChild(css);
 })();
