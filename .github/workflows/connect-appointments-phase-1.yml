@@ -14,45 +14,28 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Connect appointments module
+      - name: Connect appointments modules
         run: |
           python - <<'PY'
           from pathlib import Path
 
-          module = Path('appointments-ui.js')
-          text = module.read_text()
-          text = text.replace("const t=(es,en)=>window.language==='en'?en:es;", "const currentLanguage=()=>typeof language!=='undefined'?language:'es';\n  const t=(es,en)=>currentLanguage()==='en'?en:es;")
-          text = text.replace("[window.language==='en'?2:1]", "[currentLanguage()==='en'?2:1]")
-          text = text.replace("window.language==='en'?'en-US':'es-MX'", "currentLanguage()==='en'?'en-US':'es-MX'")
-          text = text.replace("if(!window.state)return;", "if(typeof state==='undefined')return;")
-          text = text.replace("return !!(window.state?.session&&window.state?.organization?.id&&typeof window.canViewOrganizationProspectPii==='function'&&canViewOrganizationProspectPii());", "return !!(typeof state!=='undefined'&&state.session&&state.organization?.id&&typeof canViewOrganizationProspectPii==='function'&&canViewOrganizationProspectPii());")
-          text = text.replace("${escHtml(window.language==='en'?en:es)}", "${escHtml(currentLanguage()==='en'?en:es)}")
-          old = """    let prospectId=prospectResponse.data?.prospect_id||prospectResponse.data?.id||null;\n    if(!prospectId){\n      const {data:lookup}=await db.rpc('find_recent_public_prospect_for_appointment',{target_card_id:card.id,prospect_phone:prospectPayload.phone});\n      prospectId=Array.isArray(lookup)?lookup[0]:lookup;\n    }\n"""
-          new = "    const prospectId=prospectResponse.data?.prospect_id||null;\n"
-          if old not in text:
-              raise SystemExit('Prospect fallback block not found')
-          text = text.replace(old, new)
-          # Ensure the first public render also receives the appointments panel even if renderPublic started before hooks were installed.
-          marker = "  const timer=setInterval(()=>{const a=installAdminHooks(),b=installPublicHook();if(a&&b)clearInterval(timer)},25);"
-          replacement = "  const publicPanelTimer=setInterval(()=>{try{if(typeof state==='undefined'||!state.publicCard)return;const content=document.querySelector('.public-content');if(!content||document.getElementById('appointment-public-panel')||document.querySelector('.appointment-public-success'))return;const note=content.querySelector('.public-note'),html=publicAppointmentPanel(state.publicCard);if(note)note.insertAdjacentHTML('beforebegin',html);else content.insertAdjacentHTML('beforeend',html);clearInterval(publicPanelTimer)}catch{}},50);\n  setTimeout(()=>clearInterval(publicPanelTimer),5000);\n\n  const timer=setInterval(()=>{const a=installAdminHooks(),b=installPublicHook();if(a&&b)clearInterval(timer)},25);"
-          if marker not in text:
-              raise SystemExit('Module timer marker not found')
-          text = text.replace(marker, replacement)
-          module.write_text(text)
-
           index = Path('index.html')
           html = index.read_text()
-          tag = '<script src="/appointments-ui.js"></script>'
-          if tag not in html:
+          base = '<script src="/appointments-ui.js"></script>'
+          fixes = '<script src="/appointments-runtime-fixes.js"></script>'
+          if base not in html:
               if '</body>' not in html:
                   raise SystemExit('Closing body tag not found')
-              html = html.replace('</body>', f'  {tag}\n</body>', 1)
+              html = html.replace('</body>', f'  {base}\n</body>', 1)
+          if fixes not in html:
+              html = html.replace(base, base + '\n  ' + fixes, 1)
           index.write_text(html)
           PY
       - name: Commit appointments connection
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add index.html appointments-ui.js
-          git commit -m "Connect appointments phase 1 UI"
+          git add index.html
+          git diff --cached --quiet && exit 0
+          git commit -m "Connect secure appointments runtime fixes"
           git push
