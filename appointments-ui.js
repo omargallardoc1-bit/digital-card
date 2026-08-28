@@ -1,7 +1,8 @@
 (()=>{
   'use strict';
 
-  const t=(es,en)=>window.language==='en'?en:es;
+  const currentLanguage=()=>typeof language!=='undefined'?language:'es';
+  const t=(es,en)=>currentLanguage()==='en'?en:es;
   const escHtml=value=>String(value??'').replace(/[&<>'"]/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[ch]));
   const appointmentStatuses=[
     ['requested','Solicitada','Requested'],
@@ -12,7 +13,7 @@
     ['no_show','No asistió','No show']
   ];
 
-  const statusLabel=value=>appointmentStatuses.find(x=>x[0]===value)?.[window.language==='en'?2:1]||value||t('Solicitada','Requested');
+  const statusLabel=value=>appointmentStatuses.find(x=>x[0]===value)?.[currentLanguage()==='en'?2:1]||value||t('Solicitada','Requested');
   const statusClass=value=>({requested:'warning',confirmed:'active',rescheduled:'draft',cancelled:'archived',completed:'active',no_show:'archived'})[value]||'info';
   const localInput=value=>{
     const d=new Date(value);
@@ -23,11 +24,11 @@
   const pretty=value=>{
     const d=new Date(value);
     if(Number.isNaN(d.getTime()))return '—';
-    return new Intl.DateTimeFormat(window.language==='en'?'en-US':'es-MX',{dateStyle:'medium',timeStyle:'short'}).format(d);
+    return new Intl.DateTimeFormat(currentLanguage()==='en'?'en-US':'es-MX',{dateStyle:'medium',timeStyle:'short'}).format(d);
   };
 
   function ensureState(){
-    if(!window.state)return;
+    if(typeof state==='undefined')return;
     if(!Array.isArray(state.appointments))state.appointments=[];
     if(typeof state.appointmentsLoading!=='boolean')state.appointmentsLoading=false;
     if(!state.appointmentsCard)state.appointmentsCard='all';
@@ -58,7 +59,7 @@
   }
 
   function canUseAdmin(){
-    return !!(window.state?.session&&window.state?.organization?.id&&typeof window.canViewOrganizationProspectPii==='function'&&canViewOrganizationProspectPii());
+    return !!(typeof state!=='undefined'&&state.session&&state.organization?.id&&typeof canViewOrganizationProspectPii==='function'&&canViewOrganizationProspectPii());
   }
 
   function appointmentCard(a){
@@ -73,7 +74,7 @@
         <div><span>${escHtml(t('Correo','Email'))}</span><strong>${escHtml(a.email||'—')}</strong></div>
       </div>
       <div class="appointment-form">
-        <div class="field"><label for="appointment-status-${escHtml(id)}">${escHtml(t('Estado','Status'))}</label><select id="appointment-status-${escHtml(id)}">${appointmentStatuses.map(([value,es,en])=>`<option value="${value}" ${a.status===value?'selected':''}>${escHtml(window.language==='en'?en:es)}</option>`).join('')}</select></div>
+        <div class="field"><label for="appointment-status-${escHtml(id)}">${escHtml(t('Estado','Status'))}</label><select id="appointment-status-${escHtml(id)}">${appointmentStatuses.map(([value,es,en])=>`<option value="${value}" ${a.status===value?'selected':''}>${escHtml(currentLanguage()==='en'?en:es)}</option>`).join('')}</select></div>
         <div class="field"><label for="appointment-time-${escHtml(id)}">${escHtml(t('Fecha y hora','Date & time'))}</label><input id="appointment-time-${escHtml(id)}" type="datetime-local" value="${escHtml(localInput(a.scheduled_at))}"></div>
         <div class="field full"><label for="appointment-notes-${escHtml(id)}">${escHtml(t('Notas','Notes'))}</label><textarea id="appointment-notes-${escHtml(id)}" maxlength="4000">${escHtml(a.notes||'')}</textarea></div>
       </div>
@@ -150,11 +151,7 @@
     const prospectPayload={card_id:card.id,name:String(values.get('name')||'').trim(),phone:String(values.get('phone')||'').trim(),email:String(values.get('email')||'').trim(),source:typeof publicEventSource==='function'?publicEventSource():'public_card',consentimiento:values.get('consentimiento')==='on'};
     const prospectResponse=await db.functions.invoke('create-prospect',{body:prospectPayload});
     if(prospectResponse.error){errorEl.textContent=t('No se pudieron registrar tus datos. Inténtalo de nuevo.','Your information could not be saved. Please try again.');button.disabled=false;button.textContent=t('Solicitar cita','Request appointment');return}
-    let prospectId=prospectResponse.data?.prospect_id||prospectResponse.data?.id||null;
-    if(!prospectId){
-      const {data:lookup}=await db.rpc('find_recent_public_prospect_for_appointment',{target_card_id:card.id,prospect_phone:prospectPayload.phone});
-      prospectId=Array.isArray(lookup)?lookup[0]:lookup;
-    }
+    const prospectId=prospectResponse.data?.prospect_id||null;
     if(!prospectId){errorEl.textContent=t('Tus datos se guardaron, pero no pudimos crear la cita. Contacta al titular desde la tarjeta.','Your information was saved, but the appointment could not be created. Please contact the card owner.');button.disabled=false;button.textContent=t('Solicitar cita','Request appointment');return}
     const {error}=await db.rpc('create_public_appointment',{target_card_id:card.id,target_prospect_id:prospectId,requested_at:when.toISOString(),target_service_id:String(values.get('service_id')||'').trim()||null,requested_duration_minutes:30,appointment_notes:String(values.get('notes')||'').trim()||null});
     if(error){errorEl.textContent=error.message||t('No se pudo crear la cita.','The appointment could not be created.');button.disabled=false;button.textContent=t('Solicitar cita','Request appointment');return}
@@ -195,6 +192,9 @@
       if(note)note.insertAdjacentHTML('beforebegin',html);else content.insertAdjacentHTML('beforeend',html);
     };
   }
+
+  const publicPanelTimer=setInterval(()=>{try{if(typeof state==='undefined'||!state.publicCard)return;const content=document.querySelector('.public-content');if(!content||document.getElementById('appointment-public-panel')||document.querySelector('.appointment-public-success'))return;const note=content.querySelector('.public-note'),html=publicAppointmentPanel(state.publicCard);if(note)note.insertAdjacentHTML('beforebegin',html);else content.insertAdjacentHTML('beforeend',html);clearInterval(publicPanelTimer)}catch{}},50);
+  setTimeout(()=>clearInterval(publicPanelTimer),5000);
 
   const timer=setInterval(()=>{const a=installAdminHooks(),b=installPublicHook();if(a&&b)clearInterval(timer)},25);
   setTimeout(()=>clearInterval(timer),5000);
