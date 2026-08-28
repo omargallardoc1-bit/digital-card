@@ -40,29 +40,35 @@
     document.head.appendChild(style);
   };
 
+  const sidebarMarkup='<span class="mx-brand-mark" aria-label="MX"><span class="mx-brand-m">M</span><span class="mx-brand-x">X</span></span>';
+
   const applySidebar=()=>{
     const brand=document.querySelector('.side .brand');
     if(!brand)return;
+    if(brand.classList.contains('mx-brand-official')&&brand.querySelector('.mx-brand-mark'))return;
     brand.classList.add('mx-brand-official');
-    brand.innerHTML='<span class="mx-brand-mark" aria-label="MX"><span class="mx-brand-m">M</span><span class="mx-brand-x">X</span></span>';
+    brand.innerHTML=sidebarMarkup;
   };
 
   const applyAdminHeader=()=>{
-    document.querySelectorAll('.mx-top-brand,.mx-main-brand,.mx-inline-brand').forEach(el=>el.remove());
     const heading=document.querySelector('.admin-header .admin-heading');
     if(!heading)return;
-    heading.classList.add('mx-admin-heading-branded');
-    let logo=heading.querySelector(':scope > .mx-admin-logo');
-    if(!logo){
-      logo=document.createElement('span');
-      logo.className='mx-admin-logo';
-      logo.innerHTML='<img src="/mx-business-card-logo.svg?v=mx-admin-refined-20260828-1" alt="MX Business Card">';
-      heading.insertBefore(logo,heading.firstChild);
-    }
+    if(!heading.classList.contains('mx-admin-heading-branded'))heading.classList.add('mx-admin-heading-branded');
+    if(heading.querySelector(':scope > .mx-admin-logo'))return;
+    const logo=document.createElement('span');
+    logo.className='mx-admin-logo';
+    logo.innerHTML='<img src="/mx-business-card-logo.svg?v=mx-admin-stable-20260828-2" alt="MX Business Card">';
+    heading.insertBefore(logo,heading.firstChild);
   };
 
   const apply=()=>{applySidebar();applyAdminHeader();};
   installStyles();
   apply();
-  new MutationObserver(apply).observe(document.documentElement,{childList:true,subtree:true});
+  let scheduled=false;
+  const observer=new MutationObserver(()=>{
+    if(scheduled)return;
+    scheduled=true;
+    requestAnimationFrame(()=>{scheduled=false;apply();});
+  });
+  observer.observe(document.documentElement,{childList:true,subtree:true});
 })();
