@@ -1,18 +1,23 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 150" role="img" aria-labelledby="title desc">
   <title id="title">MX Business Card</title>
-  <desc id="desc">Logotipo MX Business Card en azul marino y azul brillante</desc>
+  <desc id="desc">Logotipo MX Business Card con M azul y X dorada</desc>
   <defs>
-    <linearGradient id="xBlue" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#09C8FF"/>
-      <stop offset="0.48" stop-color="#078DDA"/>
-      <stop offset="1" stop-color="#006CC8"/>
+    <linearGradient id="mBlue" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2F8FEA"/>
+      <stop offset="0.5" stop-color="#0C5FBA"/>
+      <stop offset="1" stop-color="#06356E"/>
+    </linearGradient>
+    <linearGradient id="xGold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FFF0A8"/>
+      <stop offset="0.38" stop-color="#F5C04F"/>
+      <stop offset="0.72" stop-color="#D89518"/>
+      <stop offset="1" stop-color="#A96800"/>
     </linearGradient>
   </defs>
   <g transform="translate(12 8)">
-    <path fill="#071633" d="M0 12h29l31 44 31-44h29v92H91V53L61 94h-2L29 53v51H0z"/>
-    <path fill="url(#xBlue)" d="M132 12h31l28 31-18 20zM205 12h31l-44 49-18-20z"/>
-    <path fill="#071633" d="M174 66l18-20 44 58h-31zM132 104l43-57 18 20-30 37z"/>
-    <text x="261" y="83" fill="#071633" font-family="Arial,Helvetica,sans-serif" font-size="49" font-weight="800" letter-spacing="1">BUSINESS CARD</text>
-    <text x="4" y="132" fill="#071633" font-family="Arial,Helvetica,sans-serif" font-size="18" font-weight="800" letter-spacing="7">BUSINESS CARD</text>
+    <path fill="url(#mBlue)" d="M0 12h29l31 44 31-44h29v92H91V53L61 94h-2L29 53v51H0z"/>
+    <path fill="url(#xGold)" d="M132 12h31l28 31-18 20zM205 12h31l-44 49-18-20zM174 66l18-20 44 58h-31zM132 104l43-57 18 20-30 37z"/>
+    <text x="261" y="83" fill="#25334D" font-family="Arial,Helvetica,sans-serif" font-size="49" font-weight="800" letter-spacing="1">BUSINESS CARD</text>
+    <text x="4" y="132" fill="#25334D" font-family="Arial,Helvetica,sans-serif" font-size="18" font-weight="800" letter-spacing="7">BUSINESS CARD</text>
   </g>
 </svg>
