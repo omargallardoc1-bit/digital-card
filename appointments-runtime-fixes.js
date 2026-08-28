@@ -7,6 +7,7 @@
   loadScript('/appointments-blocks.js');
   loadScript('/crm-commercial.js');
   loadScript('/crm-priority.js');
+  loadScript('/crm-history.js');
 
   const manager=()=>['owner','admin'].includes(String(state?.organizationMembership?.role||'').toLowerCase());
   const installRoleFix=()=>{
