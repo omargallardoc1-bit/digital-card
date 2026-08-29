@@ -3,40 +3,58 @@
   if(window.__mxReferralTrackingInstalled)return;
   window.__mxReferralTrackingInstalled=true;
 
-  const REF_PATTERN=/^[0-9a-f]{20}$/i;
+  const SUPABASE_URL='https://loovwrnifdimlwpfgjza.supabase.co';
+  const SUPABASE_PUBLISHABLE_KEY='sb_publishable_eP8FFThBgpS4ox4tlP40Lg_8Y51C9sR';
   const OMLIG_URL='https://www.omlig.com/mx-business-card/';
-  const codeCache=new Map();
+  const REF_PATTERN=/^[0-9a-f]{20}$/i;
+  let resolvedCard=null;
 
-  const currentCard=()=>{
-    try{return typeof state!=='undefined'?state.publicCard:null}catch{return null}
-  };
+  function slugFromLocation(){
+    try{return decodeURIComponent(location.pathname.replace(/^\/c\/?/,'')).split('/')[0]||''}catch{return ''}
+  }
 
-  async function referralCodeFor(card){
-    if(!card?.id)return '';
-    const embedded=String(card.referral_code||'').trim().toLowerCase();
-    if(REF_PATTERN.test(embedded))return embedded;
-    if(codeCache.has(card.id))return codeCache.get(card.id)||'';
+  async function resolveCard(){
+    if(resolvedCard)return resolvedCard;
+    const slug=slugFromLocation();
+    if(!slug)return null;
     try{
-      if(typeof db==='undefined')return '';
-      const {data,error}=await db.from('digital_cards').select('referral_code').eq('id',card.id).eq('status','published').maybeSingle();
-      if(error)return '';
-      const code=String(data?.referral_code||'').trim().toLowerCase();
-      codeCache.set(card.id,REF_PATTERN.test(code)?code:'');
-      return REF_PATTERN.test(code)?code:'';
-    }catch{return ''}
+      const url=new URL(SUPABASE_URL+'/rest/v1/digital_cards');
+      url.searchParams.set('select','id,referral_code');
+      url.searchParams.set('slug','eq.'+slug);
+      url.searchParams.set('status','eq.published');
+      url.searchParams.set('limit','1');
+      const response=await fetch(url,{headers:{apikey:SUPABASE_PUBLISHABLE_KEY,Authorization:'Bearer '+SUPABASE_PUBLISHABLE_KEY}});
+      if(!response.ok)return null;
+      const rows=await response.json();
+      const row=Array.isArray(rows)?rows[0]:null;
+      const code=String(row?.referral_code||'').trim().toLowerCase();
+      if(!row?.id||!REF_PATTERN.test(code))return null;
+      resolvedCard={id:String(row.id),referral_code:code};
+      return resolvedCard;
+    }catch{return null}
+  }
+
+  async function sendReferralClick(cardId){
+    try{
+      await fetch(SUPABASE_URL+'/functions/v1/track-card-event',{
+        method:'POST',
+        headers:{'Content-Type':'application/json',apikey:SUPABASE_PUBLISHABLE_KEY},
+        body:JSON.stringify({card_id:cardId,event_type:'referral_click',metadata:{source:new URLSearchParams(location.search).get('source')==='qr'?'qr':'public_card'}}),
+        keepalive:true
+      });
+    }catch{}
   }
 
   async function apply(){
-    const card=currentCard();
     const note=document.querySelector('.public-note');
-    if(!card||!note)return;
-    const code=await referralCodeFor(card);
+    if(!note)return;
+    const card=await resolveCard();
+    if(!card)return;
     const url=new URL(OMLIG_URL);
-    if(code){
-      url.searchParams.set('ref',code);
-      url.searchParams.set('utm_source','mx_business_card');
-      url.searchParams.set('utm_medium','referral');
-    }
+    url.searchParams.set('ref',card.referral_code);
+    url.searchParams.set('utm_source','mx_business_card');
+    url.searchParams.set('utm_medium','referral');
+
     let link=note.querySelector(':scope > a[data-mx-referral-link]');
     if(!link){
       note.textContent='';
@@ -46,12 +64,13 @@
       link.target='_blank';
       link.rel='noopener noreferrer';
       link.style.cssText='color:inherit;text-decoration:none;';
-      link.addEventListener('click',()=>{
-        try{if(typeof trackPublicClick==='function')trackPublicClick('referral_click')}catch{}
-      });
       note.appendChild(link);
     }
-    if(link.href!==url.href)link.href=url.href;
+    link.href=url.href;
+    if(!link.dataset.mxReferralBound){
+      link.dataset.mxReferralBound='1';
+      link.addEventListener('click',()=>{void sendReferralClick(card.id)});
+    }
   }
 
   void apply();
