@@ -12,6 +12,7 @@
   loadScript('/referral-tracking-safe.js');
   loadScript('/rewards-safe.js');
   loadScript('/rewards-mobile-fix.js');
+  loadScript('/rewards-subtle-mobile.js');
 
   const manager=()=>['owner','admin'].includes(String(state?.organizationMembership?.role||'').toLowerCase());
   const installRoleFix=()=>{
