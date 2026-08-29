@@ -6,8 +6,12 @@
   const REF_PATTERN=/^[0-9a-f]{20}$/i;
   const OMLIG_URL='https://www.omlig.com/mx-business-card/';
 
+  const currentCard=()=>{
+    try{return typeof state!=='undefined'?state.publicCard:null}catch{return null}
+  };
+
   const apply=()=>{
-    const card=window.state?.publicCard;
+    const card=currentCard();
     const note=document.querySelector('.public-note');
     if(!card||!note)return;
     const code=String(card.referral_code||'').trim().toLowerCase();
@@ -27,7 +31,7 @@
       link.rel='noopener noreferrer';
       link.style.cssText='color:inherit;text-decoration:none;';
       link.addEventListener('click',()=>{
-        if(typeof window.trackPublicClick==='function')window.trackPublicClick('referral_click');
+        if(typeof trackPublicClick==='function')trackPublicClick('referral_click');
       });
       note.appendChild(link);
     }
