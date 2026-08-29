@@ -23,8 +23,15 @@
       .reward-status{display:inline-block;padding:4px 8px;border-radius:999px;font-size:12px;font-weight:700;background:#eef2ff;color:#4f46e5}
       .reward-status.available{background:#eaf8f0;color:#087d3e}.reward-status.redeemed{background:#eef2f6;color:#475467}.reward-status.reversed,.reward-status.expired{background:#fff0f2;color:#b42318}
       .rewards-empty{padding:34px 18px;text-align:center;color:var(--muted)}
-      .rewards-nav-icon{display:inline-block;width:22px;text-align:center}
-      @media(max-width:900px){.rewards-summary{grid-template-columns:repeat(2,1fr)}}
+      .rewards-nav-icon{display:inline-block;width:22px;text-align:center}.rewards-label-mobile{display:none}
+      @media(max-width:950px){
+        .nav button[data-mx-rewards-nav]{padding:9px 3px!important;text-align:center!important;line-height:1.05}
+        .nav button[data-mx-rewards-nav] span{display:block!important}
+        .nav button[data-mx-rewards-nav] .rewards-nav-icon{width:auto;margin:0 auto 4px;font-size:17px}
+        .nav button[data-mx-rewards-nav] .rewards-label-desktop{display:none!important}
+        .nav button[data-mx-rewards-nav] .rewards-label-mobile{display:block!important;font-size:9px;font-weight:700;white-space:normal;overflow-wrap:anywhere}
+        .rewards-summary{grid-template-columns:repeat(2,1fr)}
+      }
       @media(max-width:600px){.rewards-summary{grid-template-columns:1fr}.rewards-table-wrap{overflow-x:auto}}
     `;
     document.head.appendChild(style);
@@ -78,7 +85,7 @@
     const button=document.createElement('button');
     button.dataset.mxRewardsNav='1';
     button.className=stateSafe()?.page==='rewards'?'active':'';
-    button.innerHTML=`<span class="rewards-nav-icon" aria-hidden="true">★</span><span>${t('Mis recompensas','My rewards')}</span>`;
+    button.innerHTML=`<span class="rewards-nav-icon" aria-hidden="true">★</span><span class="rewards-label-desktop">${t('Mis recompensas','My rewards')}</span><span class="rewards-label-mobile">${t('Recompensas','Rewards')}</span>`;
     button.addEventListener('click',()=>{void renderRewards()});
     nav.appendChild(button);
   }
