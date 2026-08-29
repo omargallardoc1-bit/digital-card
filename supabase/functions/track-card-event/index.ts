@@ -18,6 +18,7 @@ const PUBLIC_EVENT_TYPES = new Set([
   'call_click',
   'email_click',
   'website_click',
+  'referral_click',
 ])
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
@@ -25,11 +26,10 @@ function isAllowedOrigin(origin: string | null) {
   if (!origin) return false
   try {
     const url = new URL(origin)
-    if (url.origin !== origin) return false
-    if (EXACT_ORIGINS.has(url.origin)) return true
-    return url.protocol === 'https:' &&
-      url.port === '' &&
-      VERCEL_PREVIEW_HOST.test(url.hostname.toLowerCase())
+    return url.origin === origin && (
+      EXACT_ORIGINS.has(url.origin) ||
+      (url.protocol === 'https:' && url.port === '' && VERCEL_PREVIEW_HOST.test(url.hostname.toLowerCase()))
+    )
   } catch {
     return false
   }
@@ -44,21 +44,40 @@ function corsHeaders(origin: string | null) {
   }
 }
 
-function json(origin: string | null, status: number, body: Record<string, unknown>) {
+function json(origin: string | null, status: number, body: Record<string, unknown>, extra: Record<string, string> = {}) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders(origin), 'Content-Type': 'application/json; charset=utf-8' },
+    headers: {
+      ...corsHeaders(origin),
+      'Content-Type': 'application/json; charset=utf-8',
+      'Cache-Control': 'no-store',
+      ...extra,
+    },
   })
+}
+
+async function sha256(value: string) {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))
+  return [...new Uint8Array(digest)].map((x) => x.toString(16).padStart(2, '0')).join('')
+}
+
+function clientIp(req: Request) {
+  return (
+    req.headers.get('cf-connecting-ip') ||
+    req.headers.get('x-real-ip') ||
+    req.headers.get('x-forwarded-for')?.split(',')[0] ||
+    ''
+  ).trim().slice(0, 80)
 }
 
 Deno.serve(async (req: Request) => {
   const origin = req.headers.get('origin')
   if (!isAllowedOrigin(origin)) return json(null, 403, { error: 'Origen no permitido.' })
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: corsHeaders(origin) })
-  if (req.method !== 'POST') return json(origin, 405, { error: 'MÃ©todo no permitido.' })
+  if (req.method !== 'POST') return json(origin, 405, { error: 'Método no permitido.' })
 
   const contentType = req.headers.get('content-type') || ''
-  if (!contentType.toLowerCase().startsWith('application/json')) return json(origin, 415, { error: 'Contenido no vÃ¡lido.' })
+  if (!contentType.toLowerCase().startsWith('application/json')) return json(origin, 415, { error: 'Contenido no válido.' })
   const declaredLength = Number(req.headers.get('content-length') || 0)
   if (declaredLength > MAX_BODY_BYTES) return json(origin, 413, { error: 'Solicitud demasiado grande.' })
 
@@ -66,7 +85,7 @@ Deno.serve(async (req: Request) => {
   try {
     raw = await req.text()
   } catch {
-    return json(origin, 400, { error: 'Solicitud no vÃ¡lida.' })
+    return json(origin, 400, { error: 'Solicitud no válida.' })
   }
   if (new TextEncoder().encode(raw).byteLength > MAX_BODY_BYTES) return json(origin, 413, { error: 'Solicitud demasiado grande.' })
 
@@ -76,29 +95,47 @@ Deno.serve(async (req: Request) => {
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('invalid body')
     body = parsed as Record<string, unknown>
   } catch {
-    return json(origin, 400, { error: 'Solicitud no vÃ¡lida.' })
+    return json(origin, 400, { error: 'Solicitud no válida.' })
   }
 
   const keys = Object.keys(body)
-  if (keys.some((key) => !ALLOWED_KEYS.has(key))) return json(origin, 400, { error: 'La solicitud contiene campos no permitidos.' })
-  if (!['card_id', 'event_type'].every((key) => keys.includes(key))) return json(origin, 400, { error: 'Faltan campos obligatorios.' })
+  if (keys.some((key) => !ALLOWED_KEYS.has(key)) || !['card_id', 'event_type'].every((key) => keys.includes(key))) {
+    return json(origin, 400, { error: 'Solicitud no válida.' })
+  }
 
   const cardId = typeof body.card_id === 'string' ? body.card_id.trim() : ''
   const eventType = typeof body.event_type === 'string' ? body.event_type.trim() : ''
-  if (!UUID_PATTERN.test(cardId) || !PUBLIC_EVENT_TYPES.has(eventType)) return json(origin, 400, { error: 'Datos no vÃ¡lidos.' })
+  if (!UUID_PATTERN.test(cardId) || !PUBLIC_EVENT_TYPES.has(eventType)) return json(origin, 400, { error: 'Datos no válidos.' })
 
   const metadataValue = body.metadata ?? {}
-  if (!metadataValue || typeof metadataValue !== 'object' || Array.isArray(metadataValue)) return json(origin, 400, { error: 'Metadata no vÃ¡lida.' })
+  if (!metadataValue || typeof metadataValue !== 'object' || Array.isArray(metadataValue)) return json(origin, 400, { error: 'Metadata no válida.' })
   const metadata = metadataValue as Record<string, unknown>
   const metadataKeys = Object.keys(metadata)
-  if (metadataKeys.some((key) => !ALLOWED_METADATA_KEYS.has(key))) return json(origin, 400, { error: 'Metadata no permitida.' })
-  if (metadata.source !== undefined && (typeof metadata.source !== 'string' || !ALLOWED_SOURCES.has(metadata.source))) return json(origin, 400, { error: 'Metadata no vÃ¡lida.' })
-  if (new TextEncoder().encode(JSON.stringify(metadata)).byteLength > MAX_METADATA_BYTES) return json(origin, 400, { error: 'Metadata demasiado grande.' })
+  if (metadataKeys.some((key) => !ALLOWED_METADATA_KEYS.has(key))) return json(origin, 400, { error: 'Metadata no válida.' })
+  if (metadata.source !== undefined && (typeof metadata.source !== 'string' || !ALLOWED_SOURCES.has(metadata.source))) {
+    return json(origin, 400, { error: 'Metadata no válida.' })
+  }
+  if (new TextEncoder().encode(JSON.stringify(metadata)).byteLength > MAX_METADATA_BYTES) return json(origin, 400, { error: 'Metadata no válida.' })
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL') || ''
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
+  const salt = Deno.env.get('PUBLIC_RATE_LIMIT_SALT') || serviceRoleKey.slice(0, 32)
   if (!supabaseUrl || !serviceRoleKey) return json(origin, 500, { error: 'No fue posible procesar el evento.' })
   const admin = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } })
+
+  const ip = clientIp(req)
+  const ua = (req.headers.get('user-agent') || '').slice(0, 200)
+  const bucket = await sha256(`${salt}|${ip || 'unknown'}|${ua}`)
+  const limit = eventType === 'view' ? 30 : 15
+  const { data: rateLimit, error: rateLimitError } = await admin.schema('private').rpc('consume_public_rate_limit', {
+    requested_bucket_key: bucket,
+    requested_action_key: `event:${cardId}:${eventType}`,
+    requested_window_seconds: 60,
+    requested_max_hits: limit,
+  })
+  if (rateLimitError) return json(origin, 503, { error: 'No fue posible procesar el evento.' })
+  const result = Array.isArray(rateLimit) ? rateLimit[0] : rateLimit
+  if (result?.allowed !== true) return json(origin, 429, { error: 'Demasiadas solicitudes. Intenta más tarde.' }, { 'Retry-After': '60' })
 
   const { data: card, error: cardError } = await admin
     .from('digital_cards')
