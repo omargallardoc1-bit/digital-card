@@ -13,6 +13,7 @@
   loadScript('/rewards-safe.js');
   loadScript('/rewards-mobile-fix.js');
   loadScript('/rewards-subtle-mobile.js');
+  loadScript('/appointment-confirmation-actions.js');
 
   const manager=()=>['owner','admin'].includes(String(state?.organizationMembership?.role||'').toLowerCase());
   const installRoleFix=()=>{
@@ -49,42 +50,16 @@
     const values=new FormData(form),rawWhen=String(values.get('scheduled_at')||''),when=new Date(rawWhen);if(Number.isNaN(when.getTime())){errorEl.textContent=t('La fecha no es válida.','The date is invalid.');return;}
     const slots=Array.isArray(state?.appointmentPublicSlots)?state.appointmentPublicSlots:[],slot=slots.find(s=>String(s?.scheduled_at)===rawWhen);if(slots.length&&!slot){errorEl.textContent=t('Ese horario ya no está disponible. Actualiza la agenda.','That time is no longer available. Refresh the schedule.');return;}
     const duration=Number(slot?.duration_minutes||values.get('duration_minutes')||30);button.disabled=true;button.textContent=t('Enviando…','Sending…');errorEl.textContent='';
-    const appointment=await db.functions.invoke('create-appointment',{body:{
-      card_id:card.id,
-      name:String(values.get('name')||'').trim(),
-      phone:String(values.get('phone')||'').trim(),
-      email:String(values.get('email')||'').trim(),
-      source:typeof publicEventSource==='function'?publicEventSource():'public_card',
-      consentimiento:values.get('consentimiento')==='on',
-      scheduled_at:when.toISOString(),
-      service_id:String(values.get('service_id')||'').trim()||null,
-      duration_minutes:duration,
-      notes:String(values.get('notes')||'').trim()||null
-    }});
+    const appointment=await db.functions.invoke('create-appointment',{body:{card_id:card.id,name:String(values.get('name')||'').trim(),phone:String(values.get('phone')||'').trim(),email:String(values.get('email')||'').trim(),source:typeof publicEventSource==='function'?publicEventSource():'public_card',consentimiento:values.get('consentimiento')==='on',scheduled_at:when.toISOString(),service_id:String(values.get('service_id')||'').trim()||null,duration_minutes:duration,notes:String(values.get('notes')||'').trim()||null}});
     if(appointment.error){errorEl.textContent=appointment.data?.error||t('No se pudo crear la cita. No se guardaron tus datos.','The appointment could not be created. Your details were not saved.');button.disabled=false;button.textContent=t('Solicitar cita','Request appointment');return;}
-    const panel=document.getElementById('appointment-public-panel');if(panel)panel.outerHTML=`<div class="panel success appointment-public-success"><b>${t('Solicitud de cita enviada.','Appointment request sent.')}</b><br>${t('La cita debe ser confirmada por llamada o WhatsApp por el titular de la tarjeta.','The appointment must be confirmed by the card owner by phone call or WhatsApp.')}</div>`;
+    const panel=document.getElementById('appointment-public-panel');if(panel)panel.outerHTML=`<div class="panel success appointment-public-success"><b>${t('Solicitud de cita enviada.','Appointment request sent.')}</b><br>${t('La cita está pendiente de confirmación por el titular de la tarjeta.','The appointment is pending confirmation by the card owner.')}</div>`;
   };
 
   const installConfirmationNotice=()=>{
-    const add=()=>{
-      const form=document.querySelector('#appointment-public-panel form');
-      if(!form||form.querySelector('.appointment-confirmation-notice'))return;
-      const notice=document.createElement('div');
-      notice.className='appointment-confirmation-notice';
-      notice.setAttribute('role','note');
-      notice.style.cssText='margin:12px 0;padding:10px 12px;border-radius:10px;background:rgba(245,158,11,.12);font-size:.92rem;line-height:1.35';
-      notice.innerHTML=`<b>${t('Importante:','Important:')}</b> ${t('La solicitud no queda confirmada automáticamente. La cita debe ser confirmada por llamada o WhatsApp por el titular de la tarjeta.','The request is not automatically confirmed. The appointment must be confirmed by the card owner by phone call or WhatsApp.')}`;
-      const actions=form.querySelector('.appointment-public-actions');
-      if(actions)form.insertBefore(notice,actions);else form.appendChild(notice);
-    };
-    add();
-    new MutationObserver(add).observe(document.documentElement,{childList:true,subtree:true});
+    const add=()=>{const form=document.querySelector('#appointment-public-panel form');if(!form||form.querySelector('.appointment-confirmation-notice'))return;const notice=document.createElement('div');notice.className='appointment-confirmation-notice';notice.setAttribute('role','note');notice.style.cssText='margin:12px 0;padding:10px 12px;border-radius:10px;background:rgba(245,158,11,.12);font-size:.92rem;line-height:1.35';notice.innerHTML=`<b>${t('Importante:','Important:')}</b> ${t('La solicitud no queda confirmada automáticamente. El proveedor deberá confirmarla.','The request is not confirmed automatically. The provider must confirm it.')}`;const actions=form.querySelector('.appointment-public-actions');if(actions)form.insertBefore(notice,actions);else form.appendChild(notice)};add();new MutationObserver(add).observe(document.documentElement,{childList:true,subtree:true});
   };
 
-  const installMobile=()=>{
-    if(typeof window.mobileNavigation!=='function'||window.__appointmentsMobileHookInstalled)return false;window.__appointmentsMobileHookInstalled=true;const original=window.mobileNavigation;
-    window.mobileNavigation=function(){const html=original();if(typeof canViewOrganizationProspectPii!=='function'||!canViewOrganizationProspectPii()||/go\('appointments'\)/.test(html))return html;const label=t('Citas','Appointments'),button=`<button class="${state?.page==='appointments'?'active':''}" onclick="go('appointments')"><span aria-hidden="true">◷</span><span>${label}</span></button>`,prospects=/(<button[^>]+onclick="go\('prospects'\)"[\s\S]*?<\/button>)/;return prospects.test(html)?html.replace(prospects,`$1${button}`):html};return true;
-  };
+  const installMobile=()=>{if(typeof window.mobileNavigation!=='function'||window.__appointmentsMobileHookInstalled)return false;window.__appointmentsMobileHookInstalled=true;const original=window.mobileNavigation;window.mobileNavigation=function(){const html=original();if(typeof canViewOrganizationProspectPii!=='function'||!canViewOrganizationProspectPii()||/go\('appointments'\)/.test(html))return html;const label=t('Citas','Appointments'),button=`<button class="${state?.page==='appointments'?'active':''}" onclick="go('appointments')"><span aria-hidden="true">◷</span><span>${label}</span></button>`,prospects=/(<button[^>]+onclick="go\('prospects'\)"[\s\S]*?<\/button>)/;return prospects.test(html)?html.replace(prospects,`$1${button}`):html};return true};
   installConfirmationNotice();
   const timer=setInterval(()=>{const a=installMobile(),b=installRoleFix();if(a&&b)clearInterval(timer)},25);setTimeout(()=>clearInterval(timer),5000);
 })();
