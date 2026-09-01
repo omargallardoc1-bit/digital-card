@@ -26,7 +26,7 @@
 
   html=html.replace('function render(){','function render(){const platformUserId=state?.session?.user?.id||null;if(platformAdminCheckedUserId!==platformUserId){platformAdminAuthorized=false;queueMicrotask(()=>checkPlatformAdminAccess())}');
 
-  const addons='<script src="/mixed-card-plans.js"><\/script><script src="/card-visual-options.js"><\/script><script src="/card-action-icons.js"><\/script><script src="/social-brand-colors.js"><\/script><script src="/image-position-editor.js"><\/script><script src="/card-audio-editor.js?v=audio-1"><\/script><script src="/card-video.js?v=video-1"><\/script><script src="/prospect-crm.js?v=crm-1"><\/script><script src="/prospect-crm-fix.js?v=crm-fix-1"><\/script><script src="/prospect-funnel.js?v=funnel-2"><\/script><script src="/nfc-module.js?v=nfc-6" data-mx-nfc-module="1"><\/script>';
+  const addons='<script src="/mixed-card-plans.js"><\/script><script src="/card-visual-options.js"><\/script><script src="/card-action-icons.js"><\/script><script src="/social-brand-colors.js"><\/script><script src="/image-position-editor.js"><\/script><script src="/card-cover-carousel.js?v=cover-1"><\/script><script src="/card-audio-editor.js?v=audio-1"><\/script><script src="/card-video.js?v=video-1"><\/script><script src="/prospect-crm.js?v=crm-1"><\/script><script src="/prospect-crm-fix.js?v=crm-fix-1"><\/script><script src="/prospect-funnel.js?v=funnel-2"><\/script><script src="/nfc-module.js?v=nfc-6" data-mx-nfc-module="1"><\/script>';
   const closeBody=html.lastIndexOf('</body>');
   if(closeBody>=0)html=html.slice(0,closeBody)+addons+html.slice(closeBody);
   else html+=addons;
