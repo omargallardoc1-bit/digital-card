@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="es">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>MX Business Card</title></head>
+<body>
+<p>Abriendo Digital Card…</p>
+<script>
+(()=>{
+  const token=(location.pathname.split('/').filter(Boolean).pop()||'').trim().toLowerCase();
+  if(!/^[a-f0-9]{24}$/.test(token)){location.replace('/');return;}
+  location.replace('https://loovwrnifdimlwpfgjza.supabase.co/functions/v1/nfc-redirect?token='+encodeURIComponent(token));
+})();
+</script>
+</body>
+</html>
