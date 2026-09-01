@@ -19,6 +19,7 @@
     {"src":"^/alta-asistida/?$","dest":"/admin-assisted.html"},
     {"src":"^/admin/?$","dest":"/admin-shell.html"},
     {"src":"^/privacidad/?$","dest":"/privacidad.html"},
+    {"src":"^/nfc/[a-fA-F0-9]{24}/?$","dest":"/nfc-redirect.html"},
     {"src":"^/c/.*$","dest":"/privacy-form-loader.html"},
     {"handle":"filesystem"},
     {"src":"/((?!.*\\.).*)","dest":"/index.html"}
