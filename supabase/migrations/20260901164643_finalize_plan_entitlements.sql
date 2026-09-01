@@ -54,6 +54,31 @@ create table if not exists public.card_cover_images (
   )
 );
 
+-- Compatibilidad con proyectos anteriores a la asignación de tipo por tarjeta.
+-- En producción la columna ya existe; en laboratorio se agrega sin alterar filas actuales.
+alter table public.digital_cards add column if not exists plan_id uuid;
+alter table public.digital_cards add column if not exists audio_url text;
+alter table public.digital_cards add column if not exists audio_duration_seconds integer;
+alter table public.digital_cards add column if not exists audio_loop boolean not null default false;
+alter table public.digital_cards add column if not exists audio_max_seconds integer not null default 30;
+
+do $plan_id_fk$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid='public.digital_cards'::regclass
+      and conname='digital_cards_plan_id_fkey'
+  ) then
+    alter table public.digital_cards
+      add constraint digital_cards_plan_id_fkey
+      foreign key(plan_id) references public.plans(id)
+      on update restrict on delete restrict;
+  end if;
+end;
+$plan_id_fk$;
+
+create index if not exists digital_cards_plan_id_idx on public.digital_cards(plan_id);
+
 create unique index if not exists card_cover_images_active_position_uidx
 on public.card_cover_images(card_id, position)
 where archived_at is null;
@@ -112,14 +137,17 @@ returns table(
 language sql stable security definer set search_path='pg_catalog'
 as $function$
   select
-    effective.plan_code,
-    coalesce((effective.capabilities->>'cover_images_limit')::integer,1),
-    coalesce((effective.capabilities->>'services_limit')::integer,0),
-    coalesce((effective.capabilities->>'audio_enabled')::boolean,false),
-    coalesce((effective.capabilities->>'audio_max_seconds')::integer,0),
-    coalesce((effective.capabilities->>'mini_crm_enabled')::boolean,false),
-    coalesce((effective.capabilities->>'appointments_enabled')::boolean,false)
-  from private.get_effective_card_plan(target_card_id) effective;
+    plan.code,
+    coalesce((plan.capabilities->>'cover_images_limit')::integer,1),
+    coalesce((plan.capabilities->>'services_limit')::integer,0),
+    coalesce((plan.capabilities->>'audio_enabled')::boolean,false),
+    coalesce((plan.capabilities->>'audio_max_seconds')::integer,0),
+    coalesce((plan.capabilities->>'mini_crm_enabled')::boolean,false),
+    coalesce((plan.capabilities->>'appointments_enabled')::boolean,false)
+  from public.digital_cards card
+  left join lateral private.get_effective_plan(card.organization_id) organization_plan on true
+  join public.plans plan on plan.id=coalesce(card.plan_id,organization_plan.plan_id)
+  where card.id=target_card_id;
 $function$;
 
 revoke all on function private.card_content_limits(uuid) from public, anon, authenticated;
