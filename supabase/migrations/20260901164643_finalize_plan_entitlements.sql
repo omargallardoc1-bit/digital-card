@@ -219,7 +219,9 @@ begin
   if used>=allowed then raise exception using errcode='P0001',message=format('El plan permite hasta %s fotografías de portada.',allowed); end if;
   insert into public.card_cover_images(card_id,object_path,position)
   values(target_card_id,normalized,used) returning * into created;
-  if used=0 then update public.digital_cards set cover_url=normalized where id=target_card_id; end if;
+  if used=0 then
+    perform public.set_card_media_reference(target_card_id,'cover',normalized);
+  end if;
   return created;
 end;
 $function$;
@@ -247,7 +249,7 @@ begin
   ) update public.card_cover_images image set position=ordered.new_position,updated_at=now() from ordered where image.id=ordered.id;
   select object_path into replacement from public.card_cover_images
   where card_id=existing.card_id and archived_at is null order by position limit 1;
-  update public.digital_cards set cover_url=replacement where id=existing.card_id;
+  perform public.set_card_media_reference(existing.card_id,'cover',replacement);
   return result;
 end;
 $function$;
