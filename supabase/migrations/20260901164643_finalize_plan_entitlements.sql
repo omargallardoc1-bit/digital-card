@@ -363,6 +363,38 @@ $function$;
 revoke all on function public.reconcile_card_services_to_plan(uuid) from public, anon, service_role;
 grant execute on function public.reconcile_card_services_to_plan(uuid) to authenticated;
 
+-- Limpieza diaria de contenido cuyo periodo de descarga ya terminó.
+-- Nunca incluye registros activos ni archivos que aún estén dentro de los 30 días.
+create or replace function private.purge_expired_plan_content()
+returns table(deleted_services integer,deleted_cover_references integer)
+language plpgsql security definer set search_path='pg_catalog'
+as $function$
+declare service_count integer; cover_count integer;
+begin
+  delete from public.card_services
+  where archived_at is not null and download_until<=now();
+  get diagnostics service_count=row_count;
+
+  delete from public.card_cover_images
+  where archived_at is not null and download_until<=now();
+  get diagnostics cover_count=row_count;
+
+  return query select service_count,cover_count;
+end;
+$function$;
+
+revoke all on function private.purge_expired_plan_content() from public, anon, authenticated, service_role;
+
+create extension if not exists pg_cron with schema pg_catalog;
+grant usage on schema cron to postgres;
+grant all privileges on all tables in schema cron to postgres;
+
+select cron.schedule(
+  'mx-business-card-expired-plan-content',
+  '15 10 * * *',
+  'select * from private.purge_expired_plan_content()'
+);
+
 -- Existing audio is preserved. New or replaced audio must respect the final plan matrix.
 create or replace function private.enforce_card_audio_plan()
 returns trigger language plpgsql security definer set search_path='pg_catalog'
