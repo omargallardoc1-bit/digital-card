@@ -10,11 +10,15 @@
     .mx-cover-carousel{position:relative;overflow:hidden}.mx-cover-carousel-controls{position:absolute;inset:auto 12px 12px;z-index:4;display:flex;justify-content:space-between;pointer-events:none}.mx-cover-carousel-controls button{pointer-events:auto;width:38px;height:38px;border:1px solid #fff8;border-radius:999px;background:#111827a8;color:#fff;font-size:22px;line-height:1}.mx-cover-dots{position:absolute;left:50%;bottom:18px;z-index:4;display:flex;gap:6px;transform:translateX(-50%)}.mx-cover-dot{width:7px;height:7px;border:0;border-radius:50%;padding:0;background:#ffffff80}.mx-cover-dot.active{background:#fff}.mx-cover-list{display:grid;gap:10px}.mx-cover-row{display:grid;grid-template-columns:80px 1fr auto;gap:12px;align-items:center;padding:10px;border:1px solid var(--line);border-radius:10px}.mx-cover-row img{width:80px;height:48px;object-fit:cover;border-radius:7px}.mx-cover-archive{margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}@media(max-width:520px){.mx-cover-row{grid-template-columns:64px 1fr}.mx-cover-row img{width:64px}.mx-cover-row button{grid-column:1/-1}}
   `;document.head.appendChild(s)}
 
-  async function loadEditor(cardId){const db=getDb();if(!db||!cardId)return;editorCardId=cardId;
+  const editorMounted=()=>!!document.getElementById('mx-cover-carousel-editor');
+
+  async function loadEditor(cardId){const db=getDb();if(!db||!cardId)return;const requestedCardId=cardId;
     const [imagesResponse,limitsResponse]=await Promise.all([
       db.from('card_cover_images').select('id,card_id,object_path,position,archived_at,download_until,created_at').eq('card_id',cardId).order('position',{ascending:true}).order('created_at',{ascending:true}),
       db.rpc('get_card_content_limits',{target_card_id:cardId})
     ]);
+    if(typeof state!=='undefined'&&state.card?.id&&state.card.id!==requestedCardId)return;
+    editorCardId=requestedCardId;
     if(imagesResponse.error){editorItems=[];editorArchived=[];limits=null;renderEditor();return}
     const rows=imagesResponse.data||[];await Promise.all(rows.map(async row=>{row.signed_url=await signed(row.object_path)}));
     editorItems=rows.filter(x=>!x.archived_at);editorArchived=rows.filter(x=>x.archived_at&&new Date(x.download_until)>new Date());
@@ -40,8 +44,8 @@
   function restart(cover,items){stop();if(matchMedia('(prefers-reduced-motion: reduce)').matches||document.hidden)return;timer=setInterval(()=>paint(cover,items,index+1),INTERVAL)}
   async function loadPublic(cardId){const db=getDb();if(!db||!cardId||publicCardId===cardId)return;publicCardId=cardId;const {data,error}=await db.from('card_cover_images').select('id,object_path,position').eq('card_id',cardId).is('archived_at',null).order('position',{ascending:true});if(error||!data?.length)return;await Promise.all(data.map(async row=>{row.signed_url=await signed(row.object_path)}));mountPublic(data.filter(x=>x.signed_url))}
 
-  let scheduled=false;const observe=()=>{if(scheduled)return;scheduled=true;requestAnimationFrame(async()=>{scheduled=false;css();if(typeof state==='undefined')return;if(state.page==='editor'&&state.card?.id&&editorCardId!==state.card.id)await loadEditor(state.card.id);if(typeof isPublicRoute==='function'&&isPublicRoute()&&state.publicCard?.id)await loadPublic(state.publicCard.id)})};
+  let scheduled=false;const observe=()=>{if(scheduled)return;scheduled=true;requestAnimationFrame(async()=>{scheduled=false;css();if(typeof state==='undefined')return;if(state.page==='editor'&&state.card?.id&&(editorCardId!==state.card.id||!editorMounted()))await loadEditor(state.card.id);if(typeof isPublicRoute==='function'&&isPublicRoute()&&state.publicCard?.id)await loadPublic(state.publicCard.id)})};
   document.addEventListener('visibilitychange',()=>{if(document.hidden)stop();else if(typeof state!=='undefined'&&state.publicCard?.id){publicCardId='';void loadPublic(state.publicCard.id)}});
   new MutationObserver(observe).observe(document.documentElement,{childList:true,subtree:true});
-  window.MXCoverCarousel={archive};if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',observe);else observe();
+  window.MXCoverCarousel={archive,refresh:()=>{editorCardId='';observe()}};if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',observe);else observe();
 })();
