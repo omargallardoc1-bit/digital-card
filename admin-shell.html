@@ -9,23 +9,23 @@
   let html=await response.text();
 
   const dbNeedle='const db=supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY);';
-  const dbReplacement=`${dbNeedle}\n  window.__mxDb=db;\n  let platformAdminAuthorized=false,platformAdminCheckedUserId=null,platformAdminCheckInFlight=false;\n  async function checkPlatformAdminAccess(){\n    const userId=state?.session?.user?.id||null;\n    if(!userId){platformAdminAuthorized=false;platformAdminCheckedUserId=null;return}\n    if(platformAdminCheckInFlight||platformAdminCheckedUserId===userId)return;\n    platformAdminAuthorized=false;platformAdminCheckedUserId=userId;platformAdminCheckInFlight=true;\n    try{\n      const {data,error}=await db.functions.invoke('platform-admin',{body:{action:'list_customers',search_text:'',page:1,page_size:1}});\n      platformAdminAuthorized=!error&&data?.ok===true;\n    }catch{platformAdminAuthorized=false}\n    finally{platformAdminCheckInFlight=false}\n    render();\n  }`;
+  const dbReplacement=`${dbNeedle}\n  window.__mxDb=db;\n  window.__mxLoadNfcPanel=function(){\n    const run=()=>window.MXNfc?.openPanel?.();\n    if(window.MXNfc){run();return}\n    const existing=document.querySelector('script[data-mx-nfc-module]');\n    if(existing){existing.addEventListener('load',run,{once:true});return}\n    const script=document.createElement('script');\n    script.src='/nfc-module.js?v=nfc-4';\n    script.dataset.mxNfcModule='1';\n    script.onload=run;\n    document.body.appendChild(script);\n  };\n  let platformAdminAuthorized=false,platformAdminCheckedUserId=null,platformAdminCheckInFlight=false;\n  async function checkPlatformAdminAccess(){\n    const userId=state?.session?.user?.id||null;\n    if(!userId){platformAdminAuthorized=false;platformAdminCheckedUserId=null;return}\n    if(platformAdminCheckInFlight||platformAdminCheckedUserId===userId)return;\n    platformAdminAuthorized=false;platformAdminCheckedUserId=userId;platformAdminCheckInFlight=true;\n    try{\n      const {data,error}=await db.functions.invoke('platform-admin',{body:{action:'list_customers',search_text:'',page:1,page_size:1}});\n      platformAdminAuthorized=!error&&data?.ok===true;\n    }catch{platformAdminAuthorized=false}\n    finally{platformAdminCheckInFlight=false}\n    render();\n  }`;
   html=html.replace(dbNeedle,dbReplacement);
 
   const desktopNeedle='</nav><button class="mobile-logout"';
-  const desktopReplacement='${platformAdminAuthorized?`<button type="button" onclick="location.assign(\'/platform-admin\')" aria-label="Superadministración">${uiIcon(\'organization\')}<span>Superadministración</span></button>`:\'\'}</nav><button class="mobile-logout"';
+  const desktopReplacement='<button type="button" data-mx-nfc-nav onclick="window.__mxLoadNfcPanel?.()" aria-label="Mis NFC"><span style="display:inline-block;width:22px">◉</span><span>Mis NFC</span></button>${platformAdminAuthorized?`<button type="button" onclick="location.assign(\'/platform-admin\')" aria-label="Superadministración">${uiIcon(\'organization\')}<span>Superadministración</span></button>`:\'\'}</nav><button class="mobile-logout"';
   html=html.replace(desktopNeedle,desktopReplacement);
 
   html=html.replace('function render(){','function render(){const platformUserId=state?.session?.user?.id||null;if(platformAdminCheckedUserId!==platformUserId){platformAdminAuthorized=false;queueMicrotask(()=>checkPlatformAdminAccess())}');
-  html=html.replace('</body>','<script src="/mixed-card-plans.js"><\/script><script src="/card-visual-options.js"><\/script><script src="/card-action-icons.js"><\/script><script src="/social-brand-colors.js"><\/script><script src="/image-position-editor.js"><\/script><script src="/card-audio-editor.js?v=audio-1"><\/script><script src="/card-video.js?v=video-1"><\/script><script src="/prospect-crm.js?v=crm-1"><\/script><script src="/prospect-crm-fix.js?v=crm-fix-1"><\/script><script src="/prospect-funnel.js?v=funnel-2"><\/script></body>');
+
+  const addons='<script src="/mixed-card-plans.js"><\/script><script src="/card-visual-options.js"><\/script><script src="/card-action-icons.js"><\/script><script src="/social-brand-colors.js"><\/script><script src="/image-position-editor.js"><\/script><script src="/card-audio-editor.js?v=audio-1"><\/script><script src="/card-video.js?v=video-1"><\/script><script src="/prospect-crm.js?v=crm-1"><\/script><script src="/prospect-crm-fix.js?v=crm-fix-1"><\/script><script src="/prospect-funnel.js?v=funnel-2"><\/script><script src="/nfc-module.js?v=nfc-4" data-mx-nfc-module="1"><\/script>';
+  const closeBody=html.lastIndexOf('</body>');
+  if(closeBody>=0)html=html.slice(0,closeBody)+addons+html.slice(closeBody);
+  else html+=addons;
 
   document.open();
   document.write(html);
   document.close();
-  const nfcScript=document.createElement('script');
-  nfcScript.src='/nfc-module.js?v=nfc-3';
-  nfcScript.defer=true;
-  document.body.appendChild(nfcScript);
 })().catch(()=>{document.body.textContent='No se pudo cargar el panel administrativo.'});
 </script>
 </body>
