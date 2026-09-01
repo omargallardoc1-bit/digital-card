@@ -91,6 +91,70 @@ create index if not exists card_cover_images_download_until_idx
 on public.card_cover_images(download_until)
 where archived_at is not null;
 
+-- El contenido excedente se conserva sin publicarlo durante la ventana de descarga.
+alter table public.card_services add column if not exists archived_at timestamptz;
+alter table public.card_services add column if not exists download_until timestamptz;
+
+do $service_download_window$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid='public.card_services'::regclass
+      and conname='card_services_download_window_check'
+  ) then
+    alter table public.card_services add constraint card_services_download_window_check check (
+      (archived_at is null and download_until is null)
+      or (archived_at is not null and download_until is not null and download_until > archived_at)
+    );
+  end if;
+end;
+$service_download_window$;
+
+create index if not exists card_services_active_card_position_idx
+on public.card_services(card_id,position,id)
+where archived_at is null;
+
+create index if not exists card_services_download_until_idx
+on public.card_services(download_until)
+where archived_at is not null;
+
+drop policy if exists "Public reads services of published cards" on public.card_services;
+create policy "Public reads services of published cards"
+on public.card_services for select
+to anon
+using (
+  archived_at is null
+  and exists (
+    select 1 from public.digital_cards card
+    where card.id=card_services.card_id and card.status='published'
+  )
+);
+
+drop policy if exists "Authenticated reads permitted card services" on public.card_services;
+create policy "Authenticated reads permitted card services"
+on public.card_services for select
+to authenticated
+using (
+  (
+    archived_at is null
+    and exists (
+      select 1 from public.digital_cards card
+      where card.id=card_services.card_id and card.status='published'
+    )
+  )
+  or (
+    exists (
+      select 1 from public.digital_cards card
+      where card.id=card_services.card_id
+        and (
+          private.is_organization_member(card.organization_id)
+          or (card.organization_id is null and card.owner_id=(select auth.uid()))
+        )
+    )
+    and (archived_at is null or download_until>now())
+  )
+);
+
 insert into public.card_cover_images(card_id, object_path, position)
 select card.id, card.cover_url, 0
 from public.digital_cards card
@@ -189,7 +253,8 @@ declare allowed integer; current_count integer;
 begin
   select limits.services_limit into allowed from private.card_content_limits(new.card_id) limits;
   if allowed is null then raise exception using errcode='42501',message='La tarjeta no tiene un plan utilizable.'; end if;
-  select count(*) into current_count from public.card_services service where service.card_id=new.card_id;
+  select count(*) into current_count from public.card_services service
+  where service.card_id=new.card_id and service.archived_at is null;
   if current_count >= allowed then
     raise exception using errcode='P0001',message=format('El plan permite hasta %s productos o servicios.',allowed);
   end if;
@@ -256,6 +321,47 @@ $function$;
 
 revoke all on function public.archive_card_cover_image(uuid) from public, anon, service_role;
 grant execute on function public.archive_card_cover_image(uuid) to authenticated;
+
+create or replace function public.reconcile_card_services_to_plan(target_card_id uuid)
+returns table(archived_count integer, download_until timestamptz)
+language plpgsql security definer set search_path='pg_catalog'
+as $function$
+declare allowed integer; affected integer; deadline timestamptz:=now()+interval '30 days';
+begin
+  if (select auth.uid()) is null then
+    raise exception using errcode='42501',message='Autenticación requerida.';
+  end if;
+  if not exists (
+    select 1 from public.digital_cards card
+    where card.id=target_card_id
+      and (
+        private.has_organization_role(card.organization_id,array['owner','admin','editor'])
+        or (card.organization_id is null and card.owner_id=(select auth.uid()))
+      )
+  ) then
+    raise exception using errcode='42501',message='No tienes permiso para modificar esta tarjeta.';
+  end if;
+
+  select limits.services_limit into allowed
+  from private.card_content_limits(target_card_id) limits;
+
+  with ranked as (
+    select service.id,row_number() over(order by service.position,service.created_at,service.id) ordinal
+    from public.card_services service
+    where service.card_id=target_card_id and service.archived_at is null
+  )
+  update public.card_services service
+  set archived_at=now(),download_until=deadline,updated_at=now()
+  from ranked
+  where service.id=ranked.id and ranked.ordinal>allowed;
+
+  get diagnostics affected=row_count;
+  return query select affected,case when affected>0 then deadline else null end;
+end;
+$function$;
+
+revoke all on function public.reconcile_card_services_to_plan(uuid) from public, anon, service_role;
+grant execute on function public.reconcile_card_services_to_plan(uuid) to authenticated;
 
 -- Existing audio is preserved. New or replaced audio must respect the final plan matrix.
 create or replace function private.enforce_card_audio_plan()
