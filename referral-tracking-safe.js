@@ -36,10 +36,10 @@
 
   async function sendReferralClick(cardId){
     try{
-      await fetch(SUPABASE_URL+'/rest/v1/rpc/track_public_referral_click',{
+      await fetch(SUPABASE_URL+'/functions/v1/track-card-event',{
         method:'POST',
-        headers:{'Content-Type':'application/json',apikey:SUPABASE_PUBLISHABLE_KEY,Authorization:'Bearer '+SUPABASE_PUBLISHABLE_KEY},
-        body:JSON.stringify({target_card_id:cardId,event_source:new URLSearchParams(location.search).get('source')==='qr'?'qr':'public_card'}),
+        headers:{'Content-Type':'application/json',apikey:SUPABASE_PUBLISHABLE_KEY},
+        body:JSON.stringify({card_id:cardId,event_type:'referral_click',metadata:{source:new URLSearchParams(location.search).get('source')==='qr'?'qr':'public_card'}}),
         keepalive:true
       });
     }catch{}
