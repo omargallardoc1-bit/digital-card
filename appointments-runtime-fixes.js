@@ -14,6 +14,7 @@
   loadScript('/rewards-mobile-fix.js');
   loadScript('/rewards-subtle-mobile.js');
   loadScript('/media-upload-fix.js');
+  loadScript('/reviews.js');
 
   const manager=()=>['owner','admin'].includes(String(state?.organizationMembership?.role||'').toLowerCase());
   const installRoleFix=()=>{
